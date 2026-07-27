@@ -1,0 +1,14 @@
+# caption 生成服务器依赖清单（Ubuntu 22.04 / Python 3.12 / CUDA 12.8 / RTX PRO 6000 96GB Blackwell sm_120）
+# 注意：PyTorch 2.8.0+cu128 需通过官方 cu128 索引单独安装：
+#   pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+
+vllm                      # Qwen3-VL-32B-Instruct-FP8 的大模型推理引擎（FP8/Blackwell 支持）
+transformers>=4.56.0      # Qwen3-VL 模型定义与 tokenizer/processor（4.56 起正式支持 Qwen3-VL）
+timm>=1.0.20              # 训练侧 DINOv3 backbone（vit_base_patch16_dinov3.lvd1689m）模型注册表
+Pillow                    # 图片读取与解码（JPEG/PNG）
+PyYAML                    # 读取项目 YAML 配置文件
+yacs                      # TransReID 配置系统依赖（yacs.CfgNode）
+opencv-python             # 图片预处理与格式转换（cv2）
+scikit-learn              # 指标与工具函数（如聚类/评估辅助）
+tensorboard               # 训练侧日志可视化（与训练环境保持一致）
+gdown                     # 从 Google Drive 下载数据集/权重文件
