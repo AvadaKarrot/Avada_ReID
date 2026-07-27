@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data & weights (never commit)
+data/
+*.pth
+*.pth.tar
+*.pt
+*.ckpt
+*.onnx
+
+# Experiment outputs
+log/
+logs/
+output/
+outputs/
+runs/
+wandb/
+*.log
+
+# Caption generated data (large, regenerate on server)
+*_caption_dict.json
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
