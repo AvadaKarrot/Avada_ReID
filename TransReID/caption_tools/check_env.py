@@ -18,6 +18,7 @@ _MIN_TRANSFORMERS = (4, 56, 0)
 _MIN_TIMM = (1, 0, 20)
 # 训练侧 DINOv3 backbone 必须在 timm 模型注册表中可用
 _DINOV3_MODEL_NAME = "vit_base_patch16_dinov3.lvd1689m"
+_DINOV3_BASE_ENTRY = "vit_base_patch16_dinov3"
 
 
 def _parse_version(version_str: str) -> tuple[int, ...]:
@@ -122,16 +123,28 @@ def check_timm() -> bool:
         print(f"[FAIL] timm {timm.__version__}（要求 >= {req}）")
         return False
     dinov3_models = timm.list_models("*dinov3*")
-    if _DINOV3_MODEL_NAME not in dinov3_models:
+    # 不同 timm 版本对预训练 tag（.lvd1689m 等）的暴露方式不同：
+    # 只要基础模型条目存在即可创建模型，tag 仅决定默认预训练权重。
+    base_entries = [n for n in dinov3_models if "." not in n]
+    if _DINOV3_BASE_ENTRY not in dinov3_models:
         print(
             f"[FAIL] timm {timm.__version__} 满足版本要求，但模型注册表中缺少 "
-            f"'{_DINOV3_MODEL_NAME}'（dinov3 相关模型共 {len(dinov3_models)} 个）"
+            f"'{_DINOV3_BASE_ENTRY}'（dinov3 相关模型共 {len(dinov3_models)} 个："
+            f"{dinov3_models}）"
         )
         return False
     print(
         f"[PASS] timm {timm.__version__}，"
-        f"'{_DINOV3_MODEL_NAME}' 已在模型注册表中（dinov3 共 {len(dinov3_models)} 个）"
+        f"'{_DINOV3_BASE_ENTRY}' 已注册（dinov3 共 {len(dinov3_models)} 个条目，"
+        f"基础模型：{base_entries}）"
     )
+    if _DINOV3_MODEL_NAME not in dinov3_models:
+        print(
+            f"       提示：未暴露 '{_DINOV3_MODEL_NAME}' tag，加载预训练权重时请用 "
+            f"timm.create_model('{_DINOV3_BASE_ENTRY}', pretrained=True, "
+            f"pretrained_cfg_overlay=dict(hf_hub_id='timm/{_DINOV3_MODEL_NAME}')) "
+            f"或直接从 HuggingFace 加载。"
+        )
     return True
 
 
