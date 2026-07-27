@@ -94,6 +94,23 @@ _C.MODEL.TEXT_PROJ = False
 ############### 文本图像特征融合的方法 'concat' 'ca'
 _C.MODEL.FUSION = '' 
 
+# Composable model API. MODEL.NAME remains available for legacy entry points.
+_C.MODEL.BACKBONE = CN()
+_C.MODEL.BACKBONE.NAME = 'clip_vit_b16'
+_C.MODEL.BACKBONE.PRETRAINED = True
+_C.MODEL.BACKBONE.PRETRAINED_NAME = ''
+
+_C.MODEL.HEAD = CN()
+_C.MODEL.HEAD.EMBED_DIM = 768
+
+# Training objectives are independent from the image-only model.
+_C.OBJECTIVE = CN()
+_C.OBJECTIVE.LABEL_SMOOTHING = 0.0
+_C.OBJECTIVE.CAPTION = CN()
+_C.OBJECTIVE.CAPTION.ENABLED = False
+_C.OBJECTIVE.CAPTION.WEIGHT = 0.0
+_C.OBJECTIVE.CAPTION.FILE = ''
+
 # -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------

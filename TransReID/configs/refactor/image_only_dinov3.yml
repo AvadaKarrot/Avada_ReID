@@ -1,0 +1,25 @@
+MODEL:
+  BACKBONE:
+    NAME: "dinov3_vit_b16"
+    PRETRAINED_NAME: "facebook/dinov3-vitb16-pretrain-lvd1689m"
+  HEAD:
+    EMBED_DIM: 768
+  CAPTION: False
+
+OBJECTIVE:
+  CAPTION:
+    ENABLED: False
+    WEIGHT: 0.0
+
+INPUT:
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PIXEL_MEAN: [0.485, 0.456, 0.406]
+  PIXEL_STD: [0.229, 0.224, 0.225]
+
+DATASETS:
+  SOURCES: ["market1501"]
+  TARGETS: ["msmt17"]
+  ROOT_DIR: "../data"
+
+OUTPUT_DIR: "../logs/refactor/dinov3_market_to_msmt"

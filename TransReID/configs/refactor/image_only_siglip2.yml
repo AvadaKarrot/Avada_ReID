@@ -1,0 +1,25 @@
+MODEL:
+  BACKBONE:
+    NAME: "siglip2_base_patch16"
+    PRETRAINED_NAME: "google/siglip2-base-patch16-224"
+  HEAD:
+    EMBED_DIM: 768
+  CAPTION: False
+
+OBJECTIVE:
+  CAPTION:
+    ENABLED: False
+    WEIGHT: 0.0
+
+INPUT:
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+
+DATASETS:
+  SOURCES: ["market1501"]
+  TARGETS: ["msmt17"]
+  ROOT_DIR: "../data"
+
+OUTPUT_DIR: "../logs/refactor/siglip2_market_to_msmt"

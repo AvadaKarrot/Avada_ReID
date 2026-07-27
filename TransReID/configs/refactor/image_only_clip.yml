@@ -1,0 +1,42 @@
+MODEL:
+  NAME: "ViT-B-16"
+  BACKBONE:
+    NAME: "clip_vit_b16"
+    PRETRAINED: True
+  HEAD:
+    EMBED_DIM: 768
+  CAPTION: False
+
+OBJECTIVE:
+  LABEL_SMOOTHING: 0.0
+  CAPTION:
+    ENABLED: False
+    WEIGHT: 0.0
+
+INPUT:
+  PERSON_REID: True
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+
+DATASETS:
+  SOURCES: ["market1501"]
+  TARGETS: ["msmt17"]
+  ROOT_DIR: "../data"
+
+DATALOADER:
+  SAMPLER: "RandomIdentitySampler"
+  NUM_INSTANCE: 4
+
+SOLVER:
+  IMS_PER_BATCH: 64
+  OPTIMIZER_NAME: "Adam"
+  MAX_EPOCHS: 60
+  BASE_LR: 0.000001
+
+TEST:
+  IMS_PER_BATCH: 128
+  FEAT_NORM: "yes"
+
+OUTPUT_DIR: "../logs/refactor/clip_market_to_msmt"
