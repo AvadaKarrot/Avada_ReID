@@ -18,7 +18,7 @@
 | market1501 | `market/bounding_box_train/` | ~1.3 万 |
 | msmt17 | `msmt17/MSMT17_V2/mask_train_v2/` | ~3.3 万 |
 | cuhk03 | `cuhk03-np/{detected,labeled}/bounding_box_train/` | ~1.5 万 |
-| cuhksysu | `cuhksysu/train/`（或 `cropped_image/train/`） | ~1.2 万 |
+| cuhksysu | `cuhksysu/cropped_images/`（全部图片即训练集，train-only） | ~3.5 万 |
 | cuhk02 | `cuhk02/{cam1,cam2}/` | ~0.7 万 |
 
 合计约 7 万张图，每图 6 条主题短句（上衣 / 下装+鞋 / 性别年龄发型 / 携带物 / 动作朝向 / 场景）。

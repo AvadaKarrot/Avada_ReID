@@ -181,21 +181,23 @@ def _iter_cuhk03(data_root: str) -> Iterator[ImageRecord]:
 # cuhksysu
 # ---------------------------------------------------------------------------
 
-# CUHKSYSU 文件名形如 p001_s1_1.png / p001_s1_1.jpg，pid 取 'p' 后的数字
+# CUHKSYSU 文件名形如 p11422_s16929_1.jpg，pid 取 'p' 后的数字
 _CUHKSYSU_PID_RE = re.compile(r"^p(\d+)", re.IGNORECASE)
 
 
 def _iter_cuhksysu(data_root: str) -> Iterator[ImageRecord]:
-    """CUHK-SYSU：训练图目录常见为 train/ 或 cropped_image/train/。
+    """CUHK-SYSU：与项目训练侧 loader（data/datasets/image/cuhksysu.py）对齐——
+    cropped_images/ 下全部图片直接作为训练数据（train-only，无 train/test 划分，
+    Protocol-1/2 中 CUHK-SYSU 只作源域不作目标域）。
 
-    文件名形如 p001_s1_1.png（或 .jpg），pid 取 'p' 后的数字。
+    文件名形如 p11422_s16929_1.jpg，pid 取 'p' 后的数字。
     文件名无法解析 pid 的图片会打印警告并跳过（防御性处理）。
     """
     root = Path(data_root)
     train_dir = _pick_existing_dir(
         [
-            root / "cuhksysu" / "train",
-            root / "cuhksysu" / "cropped_image" / "train",
+            root / "cuhksysu" / "cropped_images",
+            root / "cuhksysu" / "cropped_image",
         ],
         "cuhksysu",
     )
@@ -207,11 +209,7 @@ def _iter_cuhksysu(data_root: str) -> Iterator[ImageRecord]:
             print(f"[cuhksysu] 警告：无法从文件名解析 pid，已跳过：{img.name}")
             continue
         pid = int(m.group(1))
-        # image_path 保持与磁盘结构一致：cropped_image/train/ 布局带两层前缀
-        if train_dir.parent.name == "cropped_image":
-            image_path = f"cropped_image/{train_dir.name}/{img.name}"
-        else:
-            image_path = f"{train_dir.name}/{img.name}"
+        image_path = f"{train_dir.name}/{img.name}"
         yield ImageRecord(
             dataset="cuhksysu",
             split="train",
