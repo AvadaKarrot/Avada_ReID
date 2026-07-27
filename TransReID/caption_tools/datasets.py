@@ -226,46 +226,53 @@ def _iter_cuhksysu(data_root: str) -> Iterator[ImageRecord]:
 # ---------------------------------------------------------------------------
 
 def _iter_cuhk02(data_root: str) -> Iterator[ImageRecord]:
-    """CUHK02：训练图目录常见为 cam1/ + cam2/（两个相机目录都遍历）或 Train/。
+    """CUHK02：与项目训练侧 loader（data/datasets/image/cuhk02.py）对齐——
+    P1-P4 作训练集（P5 为测试集，不生成 caption）。
 
-    文件名样式与 Market 系列一致（pid 为第一个 '_' 前的整数）。
-    cam1/cam2 布局下 image_path 带相机目录前缀；Train/ 布局下直接拼接文件名。
+    目录布局（两种都兼容）：
+        cuhk02/Dataset/P1/cam1/*.png   （官方发布结构，项目 loader 使用）
+        cuhk02/P1/cam1/*.png           （MetaBIN 风格扁平结构）
+    文件名形如 001_1.png，pid 取第一个 '_' 前的部分；
+    pid 按 pair 内排序去重后重新编号并逐 pair 累加偏移（与训练侧 loader 一致）。
+    image_path 统一为 'P1/cam1/001_1.png'（相对 Dataset/ 层）。
     """
     root = Path(data_root)
     base = root / "cuhk02"
-    cam_dirs = [base / "cam1", base / "cam2"]
-    existing_cam_dirs = [d for d in cam_dirs if d.is_dir()]
+    if (base / "Dataset").is_dir():
+        base = base / "Dataset"
 
-    if existing_cam_dirs:
-        # 双相机目录布局：两个目录都属于 train，合并遍历
-        for cam_dir in existing_cam_dirs:
-            for img in _iter_images_in_dir(cam_dir):
-                first_token = img.stem.split("_")[0]
-                if first_token in ("0000", "-1"):
-                    continue
-                pid = int(first_token)
-                yield ImageRecord(
-                    dataset="cuhk02",
-                    split="train",
-                    image_path=f"{cam_dir.name}/{img.name}",
-                    abs_path=str(img.resolve()),
-                    pid=pid,
-                )
-        return
-
-    # 退化为单一 Train/ 目录布局
-    train_dir = _pick_existing_dir([base / "Train"], "cuhk02")
-    for img in _iter_images_in_dir(train_dir):
-        first_token = img.stem.split("_")[0]
-        if first_token in ("0000", "-1"):
+    train_pairs = ["P1", "P2", "P3", "P4"]  # P5 为测试集，见训练侧 loader
+    found_any = False
+    pid_offset = 0
+    for pair in train_pairs:
+        pair_dir = base / pair
+        if not pair_dir.is_dir():
             continue
-        pid = int(first_token)
-        yield ImageRecord(
-            dataset="cuhk02",
-            split="train",
-            image_path=f"{train_dir.name}/{img.name}",
-            abs_path=str(img.resolve()),
-            pid=pid,
+        found_any = True
+        # 先收集本 pair 的原始 pid 集合，重新编号（对齐 loader 的 relabel 逻辑）
+        raw_records: list[tuple[Path, str, str]] = []  # (img, raw_pid, rel_dir)
+        for cam in ("cam1", "cam2"):
+            cam_dir = pair_dir / cam
+            if not cam_dir.is_dir():
+                continue
+            for img in _iter_images_in_dir(cam_dir):
+                raw_pid = img.stem.split("_")[0]
+                raw_records.append((img, raw_pid, f"{pair}/{cam}"))
+        unique_pids = sorted({r[1] for r in raw_records})
+        pid2label = {p: i + pid_offset for i, p in enumerate(unique_pids)}
+        pid_offset += len(unique_pids)
+        for img, raw_pid, rel_dir in raw_records:
+            yield ImageRecord(
+                dataset="cuhk02",
+                split="train",
+                image_path=f"{rel_dir}/{img.name}",
+                abs_path=str(img.resolve()),
+                pid=pid2label[raw_pid],
+            )
+    if not found_any:
+        raise FileNotFoundError(
+            f"[cuhk02] 未找到 P1-P4 目录。已尝试：{base}/P1..P4"
+            f"（兼容 {base.parent}/Dataset/P1..P4）。请检查数据集目录结构。"
         )
 
 
