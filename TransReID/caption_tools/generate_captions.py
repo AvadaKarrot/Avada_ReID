@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -37,7 +38,14 @@ import yaml
 from PIL import Image
 
 from datasets import iter_source_train_images  # 由数据遍历工程师提供
-from prompts import SYSTEM_PROMPT, build_prompt
+from prompts import (
+    DEFAULT_PROMPT_VERSION,
+    PROMPT_V1,
+    SUPPORTED_PROMPT_VERSIONS,
+    build_prompt,
+    get_system_prompt,
+    normalize_prompt_version,
+)
 
 # 全部源域数据集（与 configs/default.yaml 中 datasets 列表保持一致）。
 ALL_DATASETS: tuple[str, ...] = (
@@ -79,13 +87,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--output-dir",
         type=str,
         default=None,
-        help="原始 JSONL 输出目录（默认 caption_tools/output/raw）。",
+        help="原始 JSONL 输出目录（默认 caption_tools/output/raw/<prompt-version>）。",
     )
     parser.add_argument(
         "--model",
         type=str,
         default=None,
         help="生成模型（HuggingFace 名或本地路径）。",
+    )
+    parser.add_argument(
+        "--prompt-version",
+        type=str,
+        choices=SUPPORTED_PROMPT_VERSIONS,
+        default=None,
+        help="Prompt 版本；v1 保留原六行基线，v2 使用结构化 ReID 属性。",
     )
     parser.add_argument(
         "--limit",
@@ -110,6 +125,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="vLLM gpu_memory_utilization。",
+    )
+    parser.add_argument(
+        "--max-model-len",
+        type=int,
+        default=None,
+        help="vLLM 引擎最大上下文长度；caption 任务无需使用模型原生超长上下文。",
+    )
+    parser.add_argument(
+        "--use-flashinfer-sampler",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="使用 FlashInfer top-k/top-p 采样器；不兼容时关闭。",
     )
     parser.add_argument(
         "--min-pixels",
@@ -140,12 +167,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     defaults = {
         "dataset": "all",
         "data_root": None,
-        "output_dir": str(Path(__file__).resolve().parent / "output" / "raw"),
+        "output_dir": None,
         "model": "Qwen/Qwen3-VL-32B-Instruct-FP8",
+        "prompt_version": DEFAULT_PROMPT_VERSION,
         "limit": None,
         "resume": True,
-        "max_new_tokens": 128,
+        "max_new_tokens": 256,
         "gpu_mem": 0.9,
+        "max_model_len": 4096,
+        "use_flashinfer_sampler": False,
         "min_pixels": 128 * 28 * 28,
         "max_pixels": 1024 * 28 * 28,
     }
@@ -153,8 +183,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     key_map = {
         "data_root": ("data_root", "data-root"),
         "output_dir": ("output_dir", "output-dir"),
+        "prompt_version": ("prompt_version", "prompt-version"),
         "max_new_tokens": ("max_new_tokens", "max-new-tokens"),
         "gpu_mem": ("gpu_mem", "gpu-mem", "gpu_memory_utilization"),
+        "max_model_len": ("max_model_len", "max-model-len"),
+        "use_flashinfer_sampler": (
+            "use_flashinfer_sampler",
+            "use-flashinfer-sampler",
+        ),
         "min_pixels": ("min_pixels", "min-pixels"),
         "max_pixels": ("max_pixels", "max-pixels"),
     }
@@ -176,6 +212,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     for key, val in merged.items():
         setattr(args, key, val)
 
+    args.prompt_version = normalize_prompt_version(args.prompt_version)
+    if not args.output_dir:
+        args.output_dir = str(
+            Path(__file__).resolve().parent
+            / "output"
+            / "raw"
+            / args.prompt_version
+        )
     if not args.data_root:
         parser.error("必须提供 --data-root（或在配置文件中设置 data_root）。")
 
@@ -200,8 +244,8 @@ def resolve_datasets(dataset_arg: str, cfg_datasets: Sequence[str] | None) -> li
 # 续跑支持
 # ---------------------------------------------------------------------------
 
-def load_done_paths(output_file: Path) -> set[str]:
-    """读取已有输出文件中的 image_path 集合（损坏行跳过并告警）。"""
+def load_done_paths(output_file: Path, prompt_version: str) -> set[str]:
+    """读取断点并拒绝在同一 JSONL 中混写不同 Prompt 版本。"""
     done: set[str] = set()
     if not output_file.is_file():
         return done
@@ -218,6 +262,14 @@ def load_done_paths(output_file: Path) -> set[str]:
                     file=sys.stderr,
                 )
                 continue
+            existing_version = normalize_prompt_version(
+                str(rec.get("prompt_version", PROMPT_V1))
+            )
+            if existing_version != prompt_version:
+                raise ValueError(
+                    f"{output_file} 已包含 prompt_version={existing_version}，"
+                    f"当前请求为 {prompt_version}；请使用独立输出目录。"
+                )
             path = rec.get("image_path")
             if isinstance(path, str):
                 done.add(path)
@@ -230,6 +282,9 @@ def load_done_paths(output_file: Path) -> set[str]:
 
 def build_llm(args: argparse.Namespace):
     """初始化 vLLM 引擎。延迟导入 vllm，使 --help / 参数校验可在无 GPU 环境运行。"""
+    os.environ["VLLM_USE_FLASHINFER_SAMPLER"] = (
+        "1" if args.use_flashinfer_sampler else "0"
+    )
     try:
         from vllm import LLM
     except ImportError as e:
@@ -240,6 +295,7 @@ def build_llm(args: argparse.Namespace):
     return LLM(
         model=args.model,
         gpu_memory_utilization=args.gpu_mem,
+        max_model_len=args.max_model_len,
         mm_processor_kwargs={
             "min_pixels": args.min_pixels,
             "max_pixels": args.max_pixels,
@@ -253,6 +309,7 @@ def run_chunk(
     llm: Any,
     sampling_params: Any,
     chunk: Sequence[Any],
+    system_prompt: str,
     prompt_text: str,
 ) -> list[tuple[Any, str]]:
     """对一个分块执行批量多模态推理。
@@ -272,7 +329,7 @@ def run_chunk(
             continue
         conversations.append(
             [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": [
@@ -302,6 +359,7 @@ def write_records(
     fh: Any,
     results: Sequence[tuple[Any, str]],
     model_name: str,
+    prompt_version: str,
 ) -> int:
     """把一块结果增量追加写入 JSONL 并 flush+fsync，保证中断不丢进度。"""
     import os
@@ -315,6 +373,7 @@ def write_records(
             "pid": rec.pid,
             "raw_response": raw_response,
             "generator": model_name,
+            "prompt_version": prompt_version,
         }
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         n += 1
@@ -332,6 +391,7 @@ def process_dataset(
     sampling_params: Any,
     dataset: str,
     args: argparse.Namespace,
+    system_prompt: str,
     prompt_text: str,
 ) -> None:
     output_dir = Path(args.output_dir)
@@ -350,7 +410,7 @@ def process_dataset(
 
     done: set[str] = set()
     if args.resume:
-        done = load_done_paths(output_file)
+        done = load_done_paths(output_file, args.prompt_version)
         if done:
             print(f"[{dataset}] 续跑：已完成 {len(done)} 张，跳过。")
 
@@ -368,8 +428,19 @@ def process_dataset(
     with output_file.open("a", encoding="utf-8") as fh:
         for start in range(0, len(todo), DEFAULT_CHUNK_SIZE):
             chunk = todo[start : start + DEFAULT_CHUNK_SIZE]
-            results = run_chunk(llm, sampling_params, chunk, prompt_text)
-            written = write_records(fh, results, args.model)
+            results = run_chunk(
+                llm,
+                sampling_params,
+                chunk,
+                system_prompt,
+                prompt_text,
+            )
+            written = write_records(
+                fh,
+                results,
+                args.model,
+                args.prompt_version,
+            )
 
             t_done += written
             elapsed = time.perf_counter() - t_start
@@ -401,12 +472,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     print(f"模型: {args.model}")
+    print(f"Prompt: {args.prompt_version}")
     print(f"数据集: {datasets}")
     print(f"输出目录: {args.output_dir}")
     print(
         f"采样: max_new_tokens={args.max_new_tokens}; "
         f"mm: min_pixels={args.min_pixels}, max_pixels={args.max_pixels}; "
-        f"gpu_memory_utilization={args.gpu_mem}"
+        f"gpu_memory_utilization={args.gpu_mem}; "
+        f"max_model_len={args.max_model_len}; "
+        f"use_flashinfer_sampler={args.use_flashinfer_sampler}"
     )
 
     llm = build_llm(args)
@@ -418,11 +492,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_tokens=args.max_new_tokens,
     )
 
-    prompt_text = build_prompt()
+    system_prompt = get_system_prompt(args.prompt_version)
+    prompt_text = build_prompt(args.prompt_version)
 
     t_all = time.perf_counter()
     for dataset in datasets:
-        process_dataset(llm, sampling_params, dataset, args, prompt_text)
+        process_dataset(
+            llm,
+            sampling_params,
+            dataset,
+            args,
+            system_prompt,
+            prompt_text,
+        )
 
     print(f"全部完成，总耗时 {(time.perf_counter() - t_all) / 60:.1f} min。")
     return 0

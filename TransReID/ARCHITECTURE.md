@@ -110,12 +110,34 @@ Only source training records are valid:
   "pid": 2,
   "captions": ["a person wearing a dark jacket"],
   "quality_score": 0.91,
-  "generator": "caption-model-name"
+  "generator": "caption-model-name",
+  "prompt_version": "v2",
+  "attributes": {
+    "upper_clothing": {
+      "visibility": "clear",
+      "attributes": ["dark jacket"]
+    }
+  }
 }
 ```
 
 `CaptionStore` rejects query/gallery records to make target-text leakage an
-explicit error.
+explicit error. `prompt_version` is provenance metadata; legacy records without
+it are interpreted as V1. `attributes` is required in V2 generation artifacts
+and retained for auditing, while training continues to consume `captions`.
+V2.1 retains the V2 schema but enforces complete noun-headed item phrases and
+removes base-garment restatement from distinctive features.
+V2.2 adds confidence-aware footwear naming and uses one canonical full
+description in `captions`; overlapping text views can be regenerated from the
+retained `attributes` for later ablations. Training consumes only postprocessed
+and exported clean JSONL, never raw generator responses. Clean records also
+carry `postprocess_version` and `renderer_version` provenance.
+V2.3 keeps `graphic` as a safe category for unidentifiable pictorial designs,
+prioritizes more specific visible feature classes, and rejects graphics without
+color, size, or shape qualifiers.
+V2.4 makes semantic feature labels confidence-aware: `logo`, `text`, and
+`patch` require corresponding visual evidence, while a visible but ambiguous
+compact feature is represented conservatively as `mark`.
 
 ## Current gates
 

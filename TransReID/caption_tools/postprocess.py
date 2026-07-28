@@ -22,16 +22,45 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# 与同目录 prompts.py 的接口契约：parse_response(text: str) -> list[str]
+# 与同目录 prompts.py 的版本化接口契约。
 try:
-    from prompts import parse_response
+    from prompts import (
+        PROMPT_V1,
+        PROMPT_V2,
+        PROMPT_V2_1,
+        PROMPT_V2_2,
+        PROMPT_V2_3,
+        PROMPT_V2_4,
+        SUPPORTED_PROMPT_VERSIONS,
+        normalize_prompt_version,
+        parse_response_payload,
+    )
 except ImportError:  # 兼容作为包模块导入的场景
-    from .prompts import parse_response  # type: ignore[no-redef]
+    from .prompts import (  # type: ignore[no-redef]
+        PROMPT_V1,
+        PROMPT_V2,
+        PROMPT_V2_1,
+        PROMPT_V2_2,
+        PROMPT_V2_3,
+        PROMPT_V2_4,
+        SUPPORTED_PROMPT_VERSIONS,
+        normalize_prompt_version,
+        parse_response_payload,
+    )
 
 # 质量分启发式参数（见 compute_quality_score 注释）
 _IDEAL_CAPTION_COUNT = 4   # caption 数达到该值时数量项记满分
 _IDEAL_AVG_WORDS = 12.0    # 平均词数达到该值时长度项记满分
 _MIN_AVG_WORDS = 3.0       # 平均词数低于该值认为 caption 过短，长度项趋近 0
+POSTPROCESS_VERSION = "p2"
+RENDERER_VERSION_BY_PROMPT = {
+    PROMPT_V1: "legacy-v1",
+    PROMPT_V2: "r1-multiview",
+    PROMPT_V2_1: "r1-multiview",
+    PROMPT_V2_2: "r2-canonical",
+    PROMPT_V2_3: "r2-canonical",
+    PROMPT_V2_4: "r2-canonical",
+}
 
 # 英文 token 化：仅保留字母/数字/撇号，转小写
 _TOKEN_RE = re.compile(r"[a-z0-9']+")
@@ -89,24 +118,62 @@ def compute_quality_score(captions: list[str]) -> float:
     return round(0.5 * count_term + 0.5 * length_term, 4)
 
 
+def compute_v2_quality_score(attributes: dict[str, Any]) -> float:
+    """V2 质量分只奖励可靠属性覆盖，不奖励自然语言长度。"""
+    weighted_attributes = 0.0
+    covered_sections = 0
+    for key in ("upper_clothing", "lower_clothing", "footwear"):
+        region = attributes.get(key, {})
+        if not isinstance(region, dict):
+            continue
+        values = region.get("attributes", [])
+        if not isinstance(values, list) or not values:
+            continue
+        covered_sections += 1
+        weight = 1.0 if region.get("visibility") == "clear" else 0.5
+        weighted_attributes += weight * len(values)
+
+    for key in ("carried_items", "accessories", "hair", "distinctive_features"):
+        values = attributes.get(key, [])
+        if isinstance(values, list) and values:
+            covered_sections += 1
+            weighted_attributes += len(values)
+
+    if weighted_attributes == 0:
+        return 0.0
+    count_term = min(weighted_attributes / 6.0, 1.0)
+    coverage_term = min(covered_sections / 4.0, 1.0)
+    return round(0.7 * count_term + 0.3 * coverage_term, 4)
+
+
 def process_record(
     raw: dict[str, Any],
     min_captions: int,
     dedup_threshold: float,
+    prompt_version: str | None = None,
 ) -> dict[str, Any] | None:
     """将一条 raw 记录清洗为契约格式记录；无法解析出任何 caption 时返回 None。
 
     输入 raw 记录预期字段：dataset, split, image_path, pid, raw_response, generator。
     输出契约字段：dataset, split("train"), image_path, pid, captions, quality_score, generator。
     """
+    version = normalize_prompt_version(
+        prompt_version or str(raw.get("prompt_version", PROMPT_V1))
+    )
     raw_response = str(raw.get("raw_response", ""))
-    captions = parse_response(raw_response)
+    captions, attributes = parse_response_payload(raw_response, version)
     captions = dedup_captions(captions, threshold=dedup_threshold)
     if not captions:
         return None  # 解析失败 / 全部被去重，交由调用方统计丢弃数
 
-    quality_score = compute_quality_score(captions)
-    if len(captions) < min_captions:
+    if (
+        version in (PROMPT_V2, PROMPT_V2_1, PROMPT_V2_2, PROMPT_V2_3, PROMPT_V2_4)
+        and attributes is not None
+    ):
+        quality_score = compute_v2_quality_score(attributes)
+    else:
+        quality_score = compute_quality_score(captions)
+    if version == PROMPT_V1 and len(captions) < min_captions:
         quality_score = round(quality_score * 0.5, 4)  # caption 数不足，质量分减半
 
     # pid 防御性转换：源数据可能是 int 或 str
@@ -116,7 +183,7 @@ def process_record(
     except (TypeError, ValueError):
         pid = -1
 
-    return {
+    record = {
         "dataset": raw.get("dataset", ""),
         "split": "train",  # 契约硬约束：只允许 train split
         "image_path": raw.get("image_path", ""),
@@ -124,7 +191,16 @@ def process_record(
         "captions": captions,
         "quality_score": quality_score,
         "generator": raw.get("generator", ""),
+        "prompt_version": version,
+        "postprocess_version": POSTPROCESS_VERSION,
+        "renderer_version": RENDERER_VERSION_BY_PROMPT[version],
     }
+    if (
+        version in (PROMPT_V2, PROMPT_V2_1, PROMPT_V2_2, PROMPT_V2_3, PROMPT_V2_4)
+        and attributes is not None
+    ):
+        record["attributes"] = attributes
+    return record
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -144,6 +220,12 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=0.9,
         help="token 级 Jaccard 去重阈值，相似度 >= 该值判重（默认 0.9）",
+    )
+    parser.add_argument(
+        "--prompt-version",
+        choices=SUPPORTED_PROMPT_VERSIONS,
+        default=None,
+        help="可选：强制按指定版本解析；默认读取每条 raw 记录的 prompt_version。",
     )
     args = parser.parse_args(argv)
 
@@ -174,11 +256,19 @@ def main(argv: list[str] | None = None) -> int:
                 bad_lines += 1
                 print(f"警告：第 {line_no} 行 JSON 解析失败，已跳过：{e}", file=sys.stderr)
                 continue
-            record = process_record(raw, args.min_captions, args.dedup_threshold)
+            record = process_record(
+                raw,
+                args.min_captions,
+                args.dedup_threshold,
+                args.prompt_version,
+            )
             if record is None:
                 dropped += 1
                 continue
-            if len(record["captions"]) < args.min_captions:
+            if (
+                record["prompt_version"] == PROMPT_V1
+                and len(record["captions"]) < args.min_captions
+            ):
                 low_caption += 1
             fout.write(json.dumps(record, ensure_ascii=False) + "\n")
             written += 1

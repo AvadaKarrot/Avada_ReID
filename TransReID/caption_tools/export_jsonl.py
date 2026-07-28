@@ -21,6 +21,7 @@ from typing import Any
 
 # 训练侧契约要求的字段（用于合并时做完整性校验）
 _CONTRACT_FIELDS = ("dataset", "split", "image_path", "pid", "captions", "quality_score", "generator")
+_PROMPT_VERSIONS = ("v1", "v2", "v2.1", "v2.2", "v2.3", "v2.4")
 
 
 def _iter_clean_records(input_dir: Path) -> tuple[list[dict[str, Any]], int, int]:
@@ -65,6 +66,25 @@ def _iter_clean_records(input_dir: Path) -> tuple[list[dict[str, Any]], int, int
                     )
                     incomplete += 1
                     continue
+                prompt_version = str(rec.get("prompt_version", "v1")).lower()
+                if prompt_version not in _PROMPT_VERSIONS:
+                    print(
+                        f"警告：{jf.name} 第 {line_no} 行 prompt_version="
+                        f"{prompt_version!r} 非法，已跳过。",
+                        file=sys.stderr,
+                    )
+                    incomplete += 1
+                    continue
+                if prompt_version in ("v2", "v2.1", "v2.2", "v2.3", "v2.4") and not isinstance(
+                    rec.get("attributes"), dict
+                ):
+                    print(
+                        f"警告：{jf.name} 第 {line_no} 行为 V2 但缺少 attributes，已跳过。",
+                        file=sys.stderr,
+                    )
+                    incomplete += 1
+                    continue
+                rec["prompt_version"] = prompt_version
                 records.append(rec)
     return records, bad_lines, incomplete
 
@@ -128,6 +148,13 @@ def main(argv: list[str] | None = None) -> int:
     with output_path.open("w", encoding="utf-8") as f:
         for rec in records:
             ordered = {k: rec[k] for k in _CONTRACT_FIELDS}
+            ordered["prompt_version"] = rec["prompt_version"]
+            if "postprocess_version" in rec:
+                ordered["postprocess_version"] = rec["postprocess_version"]
+            if "renderer_version" in rec:
+                ordered["renderer_version"] = rec["renderer_version"]
+            if rec["prompt_version"] in ("v2", "v2.1", "v2.2", "v2.3", "v2.4"):
+                ordered["attributes"] = rec["attributes"]
             f.write(json.dumps(ordered, ensure_ascii=False) + "\n")
 
     # 按 dataset 统计条数与平均质量分，打印汇总表

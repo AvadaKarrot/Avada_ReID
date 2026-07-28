@@ -4,21 +4,31 @@
 # 生成模型（HuggingFace 名或本地路径）
 model: Qwen/Qwen3-VL-32B-Instruct-FP8
 
+# Prompt V1–V2.3 保留用于复现与消融；正式全量生成冻结为 V2.4。
+prompt_version: v2.4
+
 # 数据集根目录（占位，按实际环境修改，如 /root/autodl-tmp/data）
 data_root: /path/to/datasets
 
-# 原始 JSONL 输出目录（默认 caption_tools/output/raw）
-output_dir: ./output/raw
+# 留空时自动使用 ./output/raw/<prompt_version>。
+# 不同 Prompt 版本必须使用独立目录，避免断点续跑时混写。
+output_dir:
 
 # Qwen3-VL 多模态处理器像素范围（传给 mm_processor_kwargs）
 min_pixels: 100352     # 128 * 28 * 28
 max_pixels: 802816     # 1024 * 28 * 28
 
-# 每条 caption 的最大生成 token 数
-max_new_tokens: 128
+# V2 输出 JSON，预留足够 token 防止对象被截断。
+max_new_tokens: 256
 
 # vLLM 显存占用比例（96GB 卡上 32B-FP8 建议 0.9）
 gpu_memory_utilization: 0.9
+
+# Caption 只需短上下文，避免按 Qwen 原生 262K 上下文预留巨大 KV cache。
+max_model_len: 4096
+
+# 当前 Blackwell 环境对 FlashInfer sampling JIT 不兼容，使用兼容采样器。
+use_flashinfer_sampler: false
 
 # 源域数据集（仅 train split；--dataset all 时按此列表展开）
 datasets:
