@@ -22,6 +22,7 @@ from typing import Any
 # 训练侧契约要求的字段（用于合并时做完整性校验）
 _CONTRACT_FIELDS = ("dataset", "split", "image_path", "pid", "captions", "quality_score", "generator")
 _PROMPT_VERSIONS = ("v1", "v2", "v2.1", "v2.2", "v2.3", "v2.4")
+_ALLOWED_SPLITS = ("train", "val", "query", "gallery")
 
 
 def _iter_clean_records(input_dir: Path) -> tuple[list[dict[str, Any]], int, int]:
@@ -58,14 +59,15 @@ def _iter_clean_records(input_dir: Path) -> tuple[list[dict[str, Any]], int, int
                         file=sys.stderr,
                     )
                     continue
-                if rec["split"] != "train":
-                    # 防泄漏兜底：非 train split 一律拒绝（契约硬约束）
+                split = str(rec["split"]).lower()
+                if split not in _ALLOWED_SPLITS:
                     print(
-                        f"警告：{jf.name} 第 {line_no} 行 split={rec['split']!r} 非 train，已拒绝。",
+                        f"警告：{jf.name} 第 {line_no} 行 split={split!r} 非法，已拒绝。",
                         file=sys.stderr,
                     )
                     incomplete += 1
                     continue
+                rec["split"] = split
                 prompt_version = str(rec.get("prompt_version", "v1")).lower()
                 if prompt_version not in _PROMPT_VERSIONS:
                     print(
@@ -100,6 +102,8 @@ def _export_legacy_json(
     # dataset -> {image_path: captions}
     grouped: dict[str, dict[str, list[str]]] = defaultdict(dict)
     for rec in records:
+        if rec["split"] != "train":
+            continue
         grouped[rec["dataset"]][rec["image_path"]] = rec["captions"]
 
     counts: dict[str, int] = {}

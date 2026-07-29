@@ -472,12 +472,29 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
         stripped = fenced.group(1).strip()
     start = stripped.find("{")
     end = stripped.rfind("}")
-    if start < 0 or end <= start:
+    if start < 0:
         return None
-    try:
-        value = json.loads(stripped[start : end + 1])
-    except json.JSONDecodeError:
-        return None
+    value = None
+    if end > start:
+        try:
+            value = json.loads(stripped[start : end + 1])
+        except json.JSONDecodeError:
+            value = None
+    if isinstance(value, dict):
+        return value
+
+    # A rare deterministic-generation failure can exhaust max_new_tokens
+    # while enumerating the final distinctive_features list. Earlier fields
+    # are still complete and useful. Repair only this exact schema-tail case;
+    # discard the incomplete final field instead of guessing its contents.
+    marker = '"distinctive_features"'
+    marker_pos = stripped.find(marker, start)
+    if marker_pos >= 0:
+        candidate = stripped[start:marker_pos] + '"distinctive_features": []}'
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            value = None
     return value if isinstance(value, dict) else None
 
 
@@ -680,7 +697,11 @@ def render_v2_captions(attributes: dict[str, Any]) -> list[str]:
 def render_v2_2_captions(attributes: dict[str, Any]) -> list[str]:
     """Return one canonical full-description caption for training."""
     captions = render_v2_captions(attributes)
-    return captions[:1]
+    # Preserve the one-image/one-contract-record invariant for severely
+    # occluded or unusable crops. The downstream quality score remains 0.0
+    # when every reliable attribute is empty, so training can filter or
+    # down-weight this deliberately generic fallback.
+    return captions[:1] or ["a person"]
 
 
 def parse_response_payload(

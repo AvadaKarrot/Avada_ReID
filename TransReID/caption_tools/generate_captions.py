@@ -37,7 +37,7 @@ from typing import Any, Iterator, Sequence
 import yaml
 from PIL import Image
 
-from datasets import iter_source_train_images  # 由数据遍历工程师提供
+from datasets import SPLIT_SCOPES, iter_caption_images
 from prompts import (
     DEFAULT_PROMPT_VERSION,
     PROMPT_V1,
@@ -109,6 +109,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="调试用：每个数据集只处理前 N 张图。",
     )
     parser.add_argument(
+        "--split-scope",
+        type=str,
+        choices=SPLIT_SCOPES,
+        default=None,
+        help=(
+            "Caption coverage: train, trainval, full "
+            "(train+query+gallery), or all official manifest splits."
+        ),
+    )
+    parser.add_argument(
         "--resume",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -171,6 +181,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "model": "Qwen/Qwen3-VL-32B-Instruct-FP8",
         "prompt_version": DEFAULT_PROMPT_VERSION,
         "limit": None,
+        "split_scope": "train",
         "resume": True,
         "max_new_tokens": 256,
         "gpu_mem": 0.9,
@@ -184,6 +195,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "data_root": ("data_root", "data-root"),
         "output_dir": ("output_dir", "output-dir"),
         "prompt_version": ("prompt_version", "prompt-version"),
+        "split_scope": ("split_scope", "split-scope"),
         "max_new_tokens": ("max_new_tokens", "max-new-tokens"),
         "gpu_mem": ("gpu_mem", "gpu-mem", "gpu_memory_utilization"),
         "max_model_len": ("max_model_len", "max-model-len"),
@@ -368,7 +380,7 @@ def write_records(
     for rec, raw_response in results:
         row = {
             "dataset": rec.dataset,
-            "split": "train",  # 契约：只允许 train split
+            "split": rec.split,
             "image_path": rec.image_path,
             "pid": rec.pid,
             "raw_response": raw_response,
@@ -400,7 +412,13 @@ def process_dataset(
 
     # 物化迭代器以便统计总数与分块（train 集规模约万级，内存可承受）。
     print(f"[{dataset}] 枚举图片: root={args.data_root}")
-    records = list(iter_source_train_images(dataset, args.data_root))
+    records = list(
+        iter_caption_images(
+            dataset,
+            args.data_root,
+            split_scope=args.split_scope,
+        )
+    )
     if args.limit is not None:
         records = records[: args.limit]
     total = len(records)

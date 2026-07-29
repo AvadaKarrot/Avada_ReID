@@ -18,16 +18,17 @@
 
 历史 JSONL 没有 `prompt_version` 时自动按 `v1` 读取，不会修改原文件。
 
-> ⚠️ 契约约束：**只生成源域 train split**。目标域 query/gallery 的文本会被
-> `CaptionStore` 显式拒绝（防止目标域文本泄漏），不要为它们生成 caption。
+> ⚠️ 训练约束：全量 Caption 资产可以保留官方 `train/val/query/gallery`
+> 标签，但训练侧必须显式筛选源域 `train`。目标域推理仍只允许图像输入，
+> 不得读取 query/gallery Caption，避免文本泄漏。
 
 ## 覆盖数据集（Protocol-1 + Protocol-2 源域）
 
 | 数据集 | 目录约定（`--data-root` 下） | 规模 |
 |---|---|---|
 | market1501 | `market/bounding_box_train/` | ~1.3 万 |
-| msmt17 | `msmt17/MSMT17_V2/mask_train_v2/` | ~3.3 万 |
-| cuhk03 | `cuhk03-np/{detected,labeled}/bounding_box_train/` | ~1.5 万 |
+| msmt17 | `msmt17/MSMT17_V1/{train,test}/<pid>/` + 官方 `list_*.txt`（V2 同样按 manifest 读取） | 126,441 all |
+| cuhk03 | `cuhk03/images_detected/` + `splits_new_detected.json` | 14,097 all |
 | cuhksysu | `cuhksysu/cropped_images/`（全部图片即训练集，train-only） | ~3.5 万 |
 | cuhk02 | `cuhk02/{cam1,cam2}/` | ~0.7 万 |
 
@@ -75,7 +76,7 @@ python generate_captions.py --dataset market1501 --data-root /root/autodl-tmp/da
 
 # 步骤 1：批量生成（冻结 Prompt V2.4；支持中断续跑，重跑同一命令即可）
 python generate_captions.py --dataset all --data-root /root/autodl-tmp/data \
-    --config configs/default.yaml
+    --config configs/default.yaml --split-scope all
 
 # 步骤 2：清洗（训练只使用 clean；raw 仅用于审计生成质量）
 for d in market1501 msmt17 cuhk03 cuhksysu cuhk02; do
@@ -93,7 +94,7 @@ python export_jsonl.py --input-dir ./output/clean/v2.4 --output ./output/caption
 | 文件 | 职责 |
 |---|---|
 | `prompts.py` | 冻结的 V1、结构化 V2、版本选择、响应解析与 V2 确定性 caption 渲染 |
-| `datasets.py` | 5 个源域数据集 train split 遍历，输出 `ImageRecord` |
+| `datasets.py` | 协议感知的官方 split 遍历，输出带真实 split 的 `ImageRecord` |
 | `generate_captions.py` | vLLM 批量推理主脚本（分块、增量落盘、断点续跑、进度/ETA） |
 | `postprocess.py` | raw → clean：按版本解析、去重、版本化质量分 |
 | `export_jsonl.py` | clean → 契约 JSONL 合并导出（校验版本、V2 attributes 和 split） |
@@ -112,5 +113,8 @@ python export_jsonl.py --input-dir ./output/clean/v2.4 --output ./output/caption
 
 训练侧应加载 clean 后由 `export_jsonl.py` 合并的 `captions.jsonl`，不得直接
 加载含 `raw_response` 的生成文件。V2.2–V2.4 的 clean 记录包含
-`postprocess_version=p2` 和 `renderer_version=r2-canonical`，且
+`postprocess_version=p2` 和 `renderer_version=r2.1-canonical-fallback`，且
 `captions` 只含一条综合描述；结构化 `attributes` 继续保留用于审计和消融。
+严重遮挡导致所有可靠属性为空时保留通用 Caption `a person`，质量分为 `0.0`，
+训练侧可据此过滤或降权。最终 `captions.jsonl` 保留官方 split；旧格式
+`train_caption_dict.json` 仍只导出 train，避免评测文本泄漏。

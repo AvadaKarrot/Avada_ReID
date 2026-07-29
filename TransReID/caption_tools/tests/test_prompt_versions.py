@@ -369,6 +369,69 @@ class PromptVersionTests(unittest.TestCase):
         self.assertGreater(record["quality_score"], 0)
         self.assertTrue(record["captions"])
 
+    def test_v2_4_postprocess_preserves_empty_attribute_record(self) -> None:
+        raw = {
+            "dataset": "market1501",
+            "split": "train",
+            "image_path": "bounding_box_train/0081.jpg",
+            "pid": 81,
+            "raw_response": json.dumps(
+                {
+                    "upper_clothing": {
+                        "visibility": "not_visible",
+                        "attributes": [],
+                    },
+                    "lower_clothing": {
+                        "visibility": "not_visible",
+                        "attributes": [],
+                    },
+                    "footwear": {
+                        "visibility": "not_visible",
+                        "attributes": [],
+                    },
+                    "carried_items": [],
+                    "accessories": [],
+                    "hair": [],
+                    "distinctive_features": [],
+                }
+            ),
+            "generator": "test-model",
+            "prompt_version": PROMPT_V2_4,
+        }
+        record = process_record(raw, min_captions=2, dedup_threshold=0.9)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["captions"], ["a person"])
+        self.assertEqual(record["quality_score"], 0.0)
+        self.assertEqual(record["prompt_version"], PROMPT_V2_4)
+        self.assertEqual(record["renderer_version"], "r2.1-canonical-fallback")
+        self.assertIn("attributes", record)
+
+    def test_v2_4_repairs_truncated_final_distinctive_features(self) -> None:
+        response = """{
+          "upper_clothing": {
+            "visibility": "clear",
+            "attributes": ["white puffer jacket"]
+          },
+          "lower_clothing": {
+            "visibility": "clear",
+            "attributes": ["black skirt", "black leggings"]
+          },
+          "footwear": {
+            "visibility": "clear",
+            "attributes": ["black boots"]
+          },
+          "carried_items": ["black shoulder bag"],
+          "accessories": [],
+          "hair": [],
+          "distinctive_features": [
+            "white fur trim on hood",
+            "white front panel on jacket"""
+        captions, attributes = parse_response_payload(response, PROMPT_V2_4)
+        self.assertEqual(len(captions), 1)
+        self.assertIn("white puffer jacket", captions[0])
+        self.assertIsNotNone(attributes)
+        self.assertEqual(attributes["distinctive_features"], [])
+
     def test_resume_rejects_prompt_version_mixing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "market1501.jsonl"

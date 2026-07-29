@@ -59,7 +59,7 @@ RENDERER_VERSION_BY_PROMPT = {
     PROMPT_V2_1: "r1-multiview",
     PROMPT_V2_2: "r2-canonical",
     PROMPT_V2_3: "r2-canonical",
-    PROMPT_V2_4: "r2-canonical",
+    PROMPT_V2_4: "r2.1-canonical-fallback",
 }
 
 # 英文 token 化：仅保留字母/数字/撇号，转小写
@@ -155,7 +155,7 @@ def process_record(
     """将一条 raw 记录清洗为契约格式记录；无法解析出任何 caption 时返回 None。
 
     输入 raw 记录预期字段：dataset, split, image_path, pid, raw_response, generator。
-    输出契约字段：dataset, split("train"), image_path, pid, captions, quality_score, generator。
+    输出契约字段：dataset, split, image_path, pid, captions, quality_score, generator。
     """
     version = normalize_prompt_version(
         prompt_version or str(raw.get("prompt_version", PROMPT_V1))
@@ -185,7 +185,7 @@ def process_record(
 
     record = {
         "dataset": raw.get("dataset", ""),
-        "split": "train",  # 契约硬约束：只允许 train split
+        "split": str(raw.get("split", "train")).lower(),
         "image_path": raw.get("image_path", ""),
         "pid": pid,
         "captions": captions,

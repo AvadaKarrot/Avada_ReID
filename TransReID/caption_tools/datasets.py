@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,7 @@ SUPPORTED_DATASETS: list[str] = ["market1501", "msmt17", "cuhk03", "cuhksysu", "
 
 # 图片扩展名白名单（大小写不敏感）
 _IMAGE_EXTS: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".bmp")
+SPLIT_SCOPES: tuple[str, ...] = ("train", "trainval", "full", "all")
 
 
 @dataclass(frozen=True)
@@ -110,10 +112,12 @@ def _iter_market1501(data_root: str) -> Iterator[ImageRecord]:
 # ---------------------------------------------------------------------------
 
 def _iter_msmt17(data_root: str) -> Iterator[ImageRecord]:
-    """MSMT17：优先 V2 的 mask_train_v2，兼容扁平布局与 V1 的 train/ 目录。
+    """MSMT17：按官方 ``list_train.txt`` 枚举标准 train split。
 
-    文件名同样形如 0002_c1s1_000451_03.jpg；image_path 用实际目录名拼接，
-    保证与磁盘真实结构一致（训练侧用 image_path 直接 join 数据集目录）。
+    V1 的图片位于 ``train/<pid>/<image>``，V2 位于 ``mask_train_v2/``；
+    两个版本都由版本目录下的 ``list_train.txt`` 给出图片相对路径和 pid。
+    读取 split 文件而不是递归扫描目录，可以避免把 ``list_val.txt`` 中的
+    2,373 张验证图片混入标准训练集。
     """
     root = Path(data_root)
     train_dir = _pick_existing_dir(
@@ -125,18 +129,164 @@ def _iter_msmt17(data_root: str) -> Iterator[ImageRecord]:
         ],
         "msmt17",
     )
-    for img in _iter_images_in_dir(train_dir):
-        first_token = img.stem.split("_")[0]
-        if first_token in ("0000", "-1"):
-            continue
-        pid = int(first_token)
-        yield ImageRecord(
-            dataset="msmt17",
-            split="train",
-            image_path=f"{train_dir.name}/{img.name}",
-            abs_path=str(img.resolve()),
-            pid=pid,
+    dataset_dir = root / "msmt17"
+    list_train_path = train_dir.parent / "list_train.txt"
+    if not list_train_path.is_file():
+        raise FileNotFoundError(
+            f"[msmt17] 未找到官方 train split 文件：{list_train_path}"
         )
+
+    train_root = train_dir.resolve()
+    dataset_root = dataset_dir.resolve()
+    seen_paths: set[str] = set()
+    with list_train_path.open("r", encoding="utf-8") as split_file:
+        for line_no, raw_line in enumerate(split_file, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            fields = line.split()
+            if len(fields) != 2:
+                raise ValueError(
+                    f"[msmt17] {list_train_path}:{line_no} 格式错误，"
+                    "应为 '<相对图片路径> <pid>'"
+                )
+            relative_image, pid_text = fields
+            try:
+                pid = int(pid_text)
+            except ValueError as exc:
+                raise ValueError(
+                    f"[msmt17] {list_train_path}:{line_no} pid 不是整数："
+                    f"{pid_text!r}"
+                ) from exc
+
+            img = (train_dir / relative_image).resolve()
+            try:
+                img.relative_to(train_root)
+            except ValueError as exc:
+                raise ValueError(
+                    f"[msmt17] {list_train_path}:{line_no} 图片路径越界："
+                    f"{relative_image!r}"
+                ) from exc
+            if img.suffix.lower() not in _IMAGE_EXTS:
+                raise ValueError(
+                    f"[msmt17] {list_train_path}:{line_no} 不是支持的图片格式："
+                    f"{relative_image!r}"
+                )
+            if not img.is_file():
+                raise FileNotFoundError(
+                    f"[msmt17] {list_train_path}:{line_no} 图片不存在：{img}"
+                )
+
+            image_path = img.relative_to(dataset_root).as_posix()
+            if image_path in seen_paths:
+                raise ValueError(
+                    f"[msmt17] {list_train_path}:{line_no} 图片重复："
+                    f"{relative_image!r}"
+                )
+            seen_paths.add(image_path)
+
+            yield ImageRecord(
+                dataset="msmt17",
+                split="train",
+                image_path=image_path,
+                abs_path=str(img),
+                pid=pid,
+            )
+
+
+def _iter_msmt17_manifest(
+    data_root: str,
+    split_names: tuple[str, ...],
+) -> Iterator[ImageRecord]:
+    """Enumerate MSMT17 strictly from its official split manifests.
+
+    ``train`` and ``val`` entries live below the version's train directory;
+    ``query`` and ``gallery`` entries live below its test directory. Files that
+    happen to exist on disk but are absent from all manifests are intentionally
+    excluded.
+    """
+    root = Path(data_root)
+    version_candidates = (
+        ("MSMT17_V2", "mask_train_v2", "mask_test_v2"),
+        ("MSMT17_V1", "train", "test"),
+    )
+    version_dir: Path | None = None
+    train_dir: Path | None = None
+    test_dir: Path | None = None
+    for version_name, train_name, test_name in version_candidates:
+        candidate = root / "msmt17" / version_name
+        if (candidate / train_name).is_dir() and (candidate / test_name).is_dir():
+            version_dir = candidate
+            train_dir = candidate / train_name
+            test_dir = candidate / test_name
+            break
+    if version_dir is None or train_dir is None or test_dir is None:
+        raise FileNotFoundError(
+            "[msmt17] 未找到完整的 MSMT17_V1 或 MSMT17_V2 目录。"
+        )
+
+    dataset_root = (root / "msmt17").resolve()
+    seen_paths: set[str] = set()
+    for split in split_names:
+        split_file = version_dir / f"list_{split}.txt"
+        if not split_file.is_file():
+            raise FileNotFoundError(
+                f"[msmt17] 未找到官方 {split} split 文件：{split_file}"
+            )
+        image_dir = train_dir if split in ("train", "val") else test_dir
+        image_root = image_dir.resolve()
+        with split_file.open("r", encoding="utf-8") as handle:
+            for line_no, raw_line in enumerate(handle, start=1):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                fields = line.split()
+                if len(fields) != 2:
+                    raise ValueError(
+                        f"[msmt17] {split_file}:{line_no} 格式错误，"
+                        "应为 '<相对图片路径> <pid>'"
+                    )
+                relative_image, pid_text = fields
+                try:
+                    pid = int(pid_text)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"[msmt17] {split_file}:{line_no} pid 不是整数："
+                        f"{pid_text!r}"
+                    ) from exc
+
+                img = (image_dir / relative_image).resolve()
+                try:
+                    img.relative_to(image_root)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"[msmt17] {split_file}:{line_no} 图片路径越界："
+                        f"{relative_image!r}"
+                    ) from exc
+                if img.suffix.lower() not in _IMAGE_EXTS:
+                    raise ValueError(
+                        f"[msmt17] {split_file}:{line_no} 不是支持的图片格式："
+                        f"{relative_image!r}"
+                    )
+                if not img.is_file():
+                    raise FileNotFoundError(
+                        f"[msmt17] {split_file}:{line_no} 图片不存在：{img}"
+                    )
+                image_path = img.relative_to(dataset_root).as_posix()
+                if image_path in seen_paths:
+                    raise ValueError(
+                        f"[msmt17] {split_file}:{line_no} 图片跨 split 重复："
+                        f"{relative_image!r}"
+                    )
+                seen_paths.add(image_path)
+                yield ImageRecord(
+                    dataset="msmt17",
+                    split=split,
+                    image_path=image_path,
+                    abs_path=str(img),
+                    pid=pid,
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -144,37 +294,76 @@ def _iter_msmt17(data_root: str) -> Iterator[ImageRecord]:
 # ---------------------------------------------------------------------------
 
 def _iter_cuhk03(data_root: str) -> Iterator[ImageRecord]:
-    """CUHK03-NP：detected 与 labeled 两个子集的 bounding_box_train 都遍历。
+    """CUHK03-NP new protocol, detected crop, official train split."""
+    yield from _iter_cuhk03_splits(data_root, ("train",))
 
-    两个子集在官方定义中互不重叠（各自独立的划分），因此统一遍历不会重复。
-    image_path 分别带 detected/ 或 labeled/ 前缀。
+
+def _iter_cuhk03_splits(
+    data_root: str,
+    split_names: tuple[str, ...],
+) -> Iterator[ImageRecord]:
+    """Enumerate CUHK03 new-protocol detected images from its split JSON.
+
+    The JSON generated by the historical loader may contain stale absolute
+    prefixes. Only each path's basename is trusted and resolved under the
+    current ``images_detected`` directory.
     """
     root = Path(data_root)
-    found_any = False
-    for subset in ("detected", "labeled"):
-        train_dir = root / "cuhk03-np" / subset / "bounding_box_train"
-        if not train_dir.is_dir():
-            continue  # 某个子集缺失时容忍，继续遍历另一个
-        found_any = True
-        for img in _iter_images_in_dir(train_dir):
-            first_token = img.stem.split("_")[0]
-            if first_token in ("0000", "-1"):
-                continue
-            pid = int(first_token)
+    dataset_dir = root / "cuhk03"
+    images_dir = dataset_dir / "images_detected"
+    split_file = dataset_dir / "splits_new_detected.json"
+    if not images_dir.is_dir():
+        raise FileNotFoundError(
+            f"[cuhk03] 未找到 detected 图片目录：{images_dir}"
+        )
+    if not split_file.is_file():
+        raise FileNotFoundError(
+            f"[cuhk03] 未找到 new detected split 文件：{split_file}"
+        )
+
+    with split_file.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, list) or not payload:
+        raise ValueError(f"[cuhk03] split 文件格式错误：{split_file}")
+    split = payload[0]
+    seen_paths: set[str] = set()
+    for split_name in split_names:
+        entries = split.get(split_name)
+        if not isinstance(entries, list):
+            raise ValueError(
+                f"[cuhk03] {split_file} 缺少列表字段：{split_name}"
+            )
+        for entry_no, entry in enumerate(entries, start=1):
+            if not isinstance(entry, list) or len(entry) < 2:
+                raise ValueError(
+                    f"[cuhk03] {split_file}:{split_name}[{entry_no}] 格式错误"
+                )
+            source_path, pid_raw = entry[0], entry[1]
+            filename = Path(str(source_path)).name
+            img = (images_dir / filename).resolve()
+            if not img.is_file():
+                raise FileNotFoundError(
+                    f"[cuhk03] {split_name}[{entry_no}] 图片不存在：{img}"
+                )
+            try:
+                pid = int(pid_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"[cuhk03] {split_name}[{entry_no}] pid 非整数：{pid_raw!r}"
+                ) from exc
+            image_path = img.relative_to(dataset_dir.resolve()).as_posix()
+            if image_path in seen_paths:
+                raise ValueError(
+                    f"[cuhk03] 图片跨 split 重复：{image_path}"
+                )
+            seen_paths.add(image_path)
             yield ImageRecord(
                 dataset="cuhk03",
-                split="train",
-                image_path=f"{subset}/{train_dir.name}/{img.name}",
-                abs_path=str(img.resolve()),
+                split=split_name,
+                image_path=image_path,
+                abs_path=str(img),
                 pid=pid,
             )
-    if not found_any:
-        raise FileNotFoundError(
-            f"[cuhk03] 未找到训练图片目录，已尝试：\n"
-            f"  - {root / 'cuhk03-np' / 'detected' / 'bounding_box_train'}\n"
-            f"  - {root / 'cuhk03-np' / 'labeled' / 'bounding_box_train'}\n"
-            f"请确认 cuhk03-np 数据集已按 detected/labeled 结构放置。"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -311,3 +500,47 @@ def iter_source_train_images(dataset: str, data_root: str) -> Iterator[ImageReco
             f"当前支持：{', '.join(SUPPORTED_DATASETS)}"
         )
     yield from _DATASET_REGISTRY[key](data_root)
+
+
+def iter_caption_images(
+    dataset: str,
+    data_root: str,
+    split_scope: str = "train",
+) -> Iterator[ImageRecord]:
+    """Enumerate protocol-aware images for caption generation.
+
+    Scopes:
+      - ``train``: official training split only.
+      - ``trainval``: train plus validation when the dataset defines one.
+      - ``full``: DG full-source view (train + query + gallery).
+      - ``all``: every official manifest split, including validation.
+
+    Existing callers should keep using :func:`iter_source_train_images` when
+    they require the strict historical train-only contract.
+    """
+    key = dataset.strip().lower()
+    scope = split_scope.strip().lower()
+    if scope not in SPLIT_SCOPES:
+        raise ValueError(
+            f"不支持的 split_scope：{split_scope!r}；"
+            f"可选值：{', '.join(SPLIT_SCOPES)}"
+        )
+    if scope == "train":
+        yield from iter_source_train_images(key, data_root)
+        return
+    if key == "cuhk03":
+        names = ("train", "query", "gallery")
+        yield from _iter_cuhk03_splits(data_root, names)
+        return
+    if key == "msmt17":
+        if scope == "trainval":
+            names = ("train", "val")
+        elif scope == "full":
+            names = ("train", "query", "gallery")
+        else:
+            names = ("train", "val", "query", "gallery")
+        yield from _iter_msmt17_manifest(data_root, names)
+        return
+    raise ValueError(
+        f"[{key}] 当前尚未实现 split_scope={scope!r}；请使用 train。"
+    )
