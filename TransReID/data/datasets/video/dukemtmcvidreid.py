@@ -3,7 +3,7 @@ import glob
 import os.path as osp
 import warnings
 
-from torchreid.utils import read_json, write_json
+from utils.tools_from_apa import read_json, write_json
 
 from ..dataset import VideoDataset
 

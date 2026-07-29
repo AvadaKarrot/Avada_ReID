@@ -11,8 +11,16 @@ from itertools import repeat
 from collections import abc as container_abcs
 
 ################### 为了get attention_map变量 #########################
-from utils.Visualizer.visualizer import get_local
-from utils.Visualizer.visualizer import *
+try:
+    from utils.Visualizer.visualizer import get_local
+except ImportError:
+    def get_local(*_names):
+        """Keep attention computation usable without optional visualization."""
+
+        def decorator(function):
+            return function
+
+        return decorator
 
 # From PyTorch internals
 def _ntuple(n):

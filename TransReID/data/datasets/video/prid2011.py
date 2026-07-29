@@ -2,7 +2,7 @@ from __future__ import division, print_function, absolute_import
 import glob
 import os.path as osp
 
-from torchreid.utils import read_json
+from utils.tools_from_apa import read_json
 
 from ..dataset import VideoDataset
 

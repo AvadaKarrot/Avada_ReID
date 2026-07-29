@@ -22,21 +22,21 @@ def normalize_batch(batch: Any) -> Dict[str, Any]:
             "Expected a named batch or a legacy 5/6-item ReID tuple"
         )
 
-    images, pids, camids, viewids, image_paths = batch[:5]
-    captions = batch[5] if len(batch) == 6 else None
-    if captions is None:
-        caption_mask = None
+    if len(batch) == 5:
+        # Legacy source-train collate:
+        # images, pids, camids, image_paths, dataset_ids
+        images, pids, camids, image_paths, dataset_ids = batch
     else:
-        caption_mask = torch.tensor(
-            [bool(caption) for caption in captions], dtype=torch.bool
-        )
+        # Legacy query+gallery collate:
+        # images, pids, raw_camids, camid_tensor, image_paths, dataset_ids
+        images, pids, raw_camids, camids, image_paths, dataset_ids = batch
 
     return {
         "images": images,
         "pids": pids,
         "camids": camids,
-        "viewids": viewids,
+        "dataset_ids": dataset_ids,
         "image_paths": image_paths,
-        "captions": captions,
-        "caption_mask": caption_mask,
+        "captions": None,
+        "caption_mask": None,
     }
