@@ -1,0 +1,83 @@
+MODEL:
+  DEVICE: "cuda"
+  # YACS applies literal_eval to YAML strings; nested quotes preserve str.
+  DEVICE_ID: "'0'"
+  DIST_TRAIN: False
+  NAME: "ViT-B-16"
+  PRETRAIN_CHOICE: "imagenet"
+  STRIDE_SIZE: [16, 16]
+  METRIC_LOSS_TYPE: "triplet"
+  IF_LABELSMOOTH: "on"
+  IF_WITH_CENTER: "no"
+  ID_LOSS_WEIGHT: 1.0
+  TRIPLET_LOSS_WEIGHT: 1.0
+  PROMPT: False
+  CAPTION: False
+  SIE_CAMERA: False
+  SIE_VIEW: False
+
+OBJECTIVE:
+  CAPTION:
+    ENABLED: False
+    WEIGHT: 0.0
+    FILE: ""
+
+INPUT:
+  PERSON_REID: True
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PROB: 0.5
+  RE_PROB: 0.5
+  PADDING: 10
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+
+DATASETS:
+  SOURCES: "market1501"
+  TARGETS: "msmt17"
+  ROOT_DIR: "/root/autodl-tmp/datasets"
+  TRANSFORMS:
+    ["random_flip", "pad", "random_crop", "random_erase", "color_jitter"]
+
+DATALOADER:
+  SAMPLER: "RandomIdentitySampler"
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 8
+
+SOLVER:
+  SEED: 1234
+  IMS_PER_BATCH: 64
+  OPTIMIZER_NAME: "Adam"
+  BASE_LR: 0.000005
+  WARMUP_METHOD: "linear"
+  WARMUP_ITERS: 10
+  WARMUP_FACTOR: 0.1
+  WEIGHT_DECAY: 0.0001
+  WEIGHT_DECAY_BIAS: 0.0001
+  LARGE_FC_LR: False
+  BIAS_LR_FACTOR: 2
+  MAX_EPOCHS: 60
+  CHECKPOINT_PERIOD: 10
+  LOG_PERIOD: 50
+  EVAL_PERIOD: 10
+  STEPS: [30, 50]
+  GAMMA: 0.1
+  AMP_ENABLED: True
+  AMP_INIT_SCALE: 512.0
+
+TEST:
+  EVAL: True
+  IMS_PER_BATCH: 128
+  RE_RANKING: False
+  WEIGHT: ""
+  NECK_FEAT: "before"
+  FEAT_NORM: "yes"
+  GRADCAM: False
+
+COOP:
+  COOP_PROMPT: False
+
+MAPLE:
+  MAPLE_PROMPT: False
+
+OUTPUT_DIR: "/root/autodl-tmp/experiments/clipreid/market_to_msmt17/seed_1234"

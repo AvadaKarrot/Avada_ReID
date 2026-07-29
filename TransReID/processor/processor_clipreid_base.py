@@ -1,258 +1,283 @@
+"""Training and image-only evaluation for the legacy visual CLIP baseline."""
+
+from __future__ import annotations
+
 import logging
-import os
+import os.path as osp
 import time
+
 import torch
-import torch.nn as nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
+
+from engine.batch import normalize_batch
+from utils import CheckpointManager
 from utils.meter import AverageMeter
 from utils.metrics import R1_mAP_eval
-from torch.cuda import amp
-import torch.distributed as dist
-from utils import CheckpointManager
-
-import os.path as osp
 
 
-def do_train_clipreid_base(cfg,
-             model,
-             center_criterion,
-             data_manager,
-             optimizer,
-             optimizer_center,
-             scheduler,
-             loss_fn,
-             local_rank):
-    ######################################################
-    train_loader = data_manager.train_loader
-    val_loader = data_manager.test_loader
-    ################## save best model ##################
-    best_mAP = 0
-    ################## save best model ##################
-    log_period = cfg.SOLVER.LOG_PERIOD
-    checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
-    eval_period = cfg.SOLVER.EVAL_PERIOD
+def _is_main_process(distributed: bool) -> bool:
+    return not distributed or dist.get_rank() == 0
 
-    device = "cuda"
-    ############## 630 zwq fix 
-    # device = torch.device("cuda")
-    epochs = cfg.SOLVER.MAX_EPOCHS
 
-    logger = logging.getLogger("transreid.train")
+def _camera_labels(batch, cfg, device):
+    if cfg.MODEL.SIE_VIEW:
+        raise ValueError(
+            "The legacy image batches do not contain view labels; "
+            "MODEL.SIE_VIEW must remain False for this baseline"
+        )
+    if cfg.MODEL.SIE_CAMERA:
+        return batch["camids"].to(device, non_blocking=True)
+    return None
+
+
+def _evaluate(model, data_manager, cfg, device, epoch, logger):
+    evaluator = R1_mAP_eval(
+        data_manager.num_query,
+        max_rank=50,
+        feat_norm=cfg.TEST.FEAT_NORM,
+    )
+    evaluator.reset()
+    model.eval()
+
+    with torch.no_grad():
+        for legacy_batch in data_manager.test_loader:
+            batch = normalize_batch(legacy_batch)
+            if batch["captions"] is not None:
+                raise RuntimeError(
+                    "Caption data entered the image-only target evaluation"
+                )
+            images = batch["images"].to(device, non_blocking=True)
+            camera_labels = _camera_labels(batch, cfg, device)
+            features = model(images, cam_label=camera_labels)
+            evaluator.update(
+                (features, batch["pids"], batch["camids"])
+            )
+
+    cmc, mean_ap, *_ = evaluator.compute()
+    logger.info("Validation Results - Epoch: %s", epoch)
+    logger.info("mAP: %.1f%%", mean_ap * 100)
+    for rank in (1, 5, 10):
+        logger.info("CMC curve, Rank-%-3d:%.1f%%", rank, cmc[rank - 1] * 100)
+    return cmc, mean_ap
+
+
+def _checkpoint_path(cfg, epoch):
+    return osp.join(
+        cfg.OUTPUT_DIR,
+        f"{cfg.MODEL.NAME}_epoch{epoch}.pth",
+    )
+
+
+def _save_checkpoint(manager, cfg, epoch):
+    path = _checkpoint_path(cfg, epoch)
+    # CheckpointManager expects a zero-based epoch and stores epoch + 1.
+    manager.save(epoch=epoch - 1, fpath=path)
+    return path
+
+
+def do_train_clipreid_base(
+    cfg,
+    model,
+    center_criterion,
+    data_manager,
+    optimizer,
+    optimizer_center,
+    scheduler,
+    loss_fn,
+    local_rank,
+):
+    """Fine-tune the pretrained CLIP visual encoder on the source domain."""
+
+    if cfg.OBJECTIVE.CAPTION.ENABLED or cfg.MODEL.CAPTION:
+        raise ValueError(
+            "The visual CLIP baseline requires Caption to be disabled"
+        )
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for CLIP-ReID training")
+
+    distributed = bool(cfg.MODEL.DIST_TRAIN)
+    device = torch.device("cuda", local_rank)
+    model = model.to(device)
+    if distributed:
+        model = DistributedDataParallel(
+            model,
+            device_ids=[local_rank],
+            find_unused_parameters=True,
+        )
+
+    train_logger = logging.getLogger("transreid.train")
     test_logger = logging.getLogger("transreid.test")
-    logger.info('start training')
-    _LOCAL_PROCESS_GROUP = None
-    if device:
-        model.to(local_rank)
-        if torch.cuda.device_count() > 1 and cfg.MODEL.DIST_TRAIN: # zwq 701
-            print('Using {} GPUs for training'.format(torch.cuda.device_count()))
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], find_unused_parameters=True)
-            # model = nn.DataParallel(model)
-        # else:
-        #     model = nn.DataParallel(model)
-            # model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+    train_logger.info("Start single-stage visual CLIP training")
+
     loss_meter = AverageMeter()
-    acc_meter = AverageMeter()
+    accuracy_meter = AverageMeter()
+    scaler = torch.amp.GradScaler(
+        "cuda",
+        enabled=cfg.SOLVER.AMP_ENABLED,
+        init_scale=cfg.SOLVER.AMP_INIT_SCALE,
+    )
+    checkpoint_manager = CheckpointManager(
+        logs_dir=cfg.OUTPUT_DIR,
+        model=model,
+    )
+    best_mean_ap = -1.0
 
-    evaluator = R1_mAP_eval(data_manager.num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-    scaler = amp.GradScaler()
-    manager = CheckpointManager(logs_dir = cfg.OUTPUT_DIR, model = model)
-    
-    # train
-    for epoch in range(1, epochs + 1):
-        start_time = time.time()
+    for epoch in range(1, cfg.SOLVER.MAX_EPOCHS + 1):
+        epoch_start = time.time()
         loss_meter.reset()
-        acc_meter.reset()
-        evaluator.reset()
-        scheduler.step()
+        accuracy_meter.reset()
         model.train()
-        # print('ready to train')
-        for n_iter, (img, vid, target_cam, target_view, _) in enumerate(train_loader):
-            optimizer.zero_grad()
-            optimizer_center.zero_grad()
-            img = img.to(device)
-            target = vid.to(device)
-            # target_cam = target_cam.to(device)
-            if cfg.MODEL.SIE_CAMERA:
-                target_cam = target_cam.to(device)
-            else: 
-                target_cam = None
-            if cfg.MODEL.SIE_VIEW:
-                target_view = target_view.to(device)
-            else: 
-                target_view = None
-            with amp.autocast(enabled=True):
-                # score, feat = model(img, target, captions=captions, cam_label=target_cam )
-                # loss = loss_fn(score, feat, target, target_cam)
 
-                score, feat = model(img, target, cam_label=target_cam, view_label=target_view)
-                loss = loss_fn(score, feat, target, target_cam)
+        for iteration, legacy_batch in enumerate(
+            data_manager.train_loader, start=1
+        ):
+            batch = normalize_batch(legacy_batch)
+            if batch["captions"] is not None:
+                raise RuntimeError(
+                    "Caption data entered the image-only source training"
+                )
+
+            images = batch["images"].to(device, non_blocking=True)
+            targets = batch["pids"].to(device, non_blocking=True)
+            camera_labels = _camera_labels(batch, cfg, device)
+
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_center.zero_grad(set_to_none=True)
+            with torch.amp.autocast(
+                "cuda", enabled=cfg.SOLVER.AMP_ENABLED
+            ):
+                scores, features = model(
+                    images,
+                    targets,
+                    cam_label=camera_labels,
+                )
+                loss = loss_fn(
+                    scores,
+                    features,
+                    targets,
+                    camera_labels,
+                )
 
             scaler.scale(loss).backward()
-            '''
-            if n_iter  == 100 and epoch == 1 :
-                for name, param in model.named_parameters():
-                    if 'text_encoder' not in name and param.grad is None:
-                        print(f'Gradient of {name}: {param.grad}') 
-            '''
-            # for k, v in model.named_parameters():
-            #     if v.grad == None:
-            #         print(f'param: {k} grad no')
-            #     elif v.grad.dtype == torch.float16:
-            #         print(f'param: {k}')
+            if "center" in cfg.MODEL.METRIC_LOSS_TYPE:
+                scaler.unscale_(optimizer_center)
+                for parameter in center_criterion.parameters():
+                    if parameter.grad is not None:
+                        parameter.grad.mul_(
+                            1.0 / cfg.SOLVER.CENTER_LOSS_WEIGHT
+                        )
+                scaler.step(optimizer_center)
             scaler.step(optimizer)
             scaler.update()
-            if 'center' in cfg.MODEL.METRIC_LOSS_TYPE:
-                for param in center_criterion.parameters():
-                    param.grad.data *= (1. / cfg.SOLVER.CENTER_LOSS_WEIGHT)
-                scaler.step(optimizer_center)
-                scaler.update()
-            if isinstance(score, list):
-                acc = (score[0].max(1)[1] == target).float().mean()
-            else:
-                acc = (score.max(1)[1] == target).float().mean()
 
-            loss_meter.update(loss.item(), img.shape[0])
-            acc_meter.update(acc, 1)
+            primary_score = scores[0] if isinstance(scores, list) else scores
+            accuracy = (
+                primary_score.argmax(dim=1) == targets
+            ).float().mean()
+            loss_meter.update(loss.item(), images.shape[0])
+            accuracy_meter.update(accuracy.item(), images.shape[0])
 
-            torch.cuda.synchronize()
-            if (n_iter + 1) % log_period == 0:
-                logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Acc: {:.3f}, Base Lr: {:.2e}"
-                            .format(epoch, (n_iter + 1), len(train_loader),
-                                    loss_meter.avg, acc_meter.avg, scheduler.get_lr()[0]))
+            if iteration % cfg.SOLVER.LOG_PERIOD == 0:
+                train_logger.info(
+                    "Epoch[%d] Iteration[%d/%d] "
+                    "Loss: %.3f, Acc: %.3f, Base Lr: %.2e, AMP: %.0f",
+                    epoch,
+                    iteration,
+                    len(data_manager.train_loader),
+                    loss_meter.avg,
+                    accuracy_meter.avg,
+                    scheduler.get_last_lr()[0],
+                    scaler.get_scale(),
+                )
 
-        end_time = time.time()
-        time_per_batch = (end_time - start_time) / (n_iter + 1)
-        if cfg.MODEL.DIST_TRAIN:
-            pass
-        else:
-            logger.info("Epoch {} done. Time per batch: {:.3f}[s] Speed: {:.1f}[samples/s]"
-                    .format(epoch, time_per_batch, train_loader.batch_size / time_per_batch))
+        torch.cuda.synchronize(device)
+        elapsed = time.time() - epoch_start
+        seconds_per_batch = elapsed / max(len(data_manager.train_loader), 1)
+        train_logger.info(
+            "Epoch %d done. Time per batch: %.3f[s] "
+            "Speed: %.1f[samples/s]",
+            epoch,
+            seconds_per_batch,
+            data_manager.train_loader.batch_size / seconds_per_batch,
+        )
 
-        if epoch % checkpoint_period == 0:
-            if cfg.MODEL.DIST_TRAIN:
-                if dist.get_rank() == 0:
-                    #############3 zwq #############
-                    manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                    # torch.save(model.state_dict(),
-                    #            os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
-            else:
-                # torch.save(model.state_dict(),
-                #            os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
-                manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-        ############## origin code for save model
-        # if epoch % checkpoint_period == 0:
-        #     if cfg.MODEL.DIST_TRAIN:
-        #         if dist.get_rank() == 0:
-        #             torch.save(model.state_dict(),
-        #                        os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
-        #     else:
-        #         torch.save(model.state_dict(),
-        #                    os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
+        scheduler.step()
 
-        if epoch % eval_period == 0:
-            if cfg.MODEL.DIST_TRAIN:
-                if dist.get_rank() == 0:
-                    model.eval()
-                    for n_iter, (img, vid, camid, camids, _, captions) in enumerate(val_loader):
-                        with torch.no_grad():
-                            img = img.to(device)
-                            if cfg.MODEL.SIE_CAMERA:
-                                camids = camids.to(device)
-                            else: 
-                                camids = None
-                            if cfg.MODEL.SIE_VIEW:
-                                target_view = target_view.to(device)
-                            else: 
-                                target_view = None
-                            feat = model(img)
-                            evaluator.update((feat, vid, camid))
-                    cmc, mAP, _, _, _, _, _ = evaluator.compute()
-                    test_logger.info("Validation Results - Epoch: {}".format(epoch))
-                    test_logger.info("mAP: {:.1%}".format(mAP))               
-                    for r in [1, 5, 10]:
-                        test_logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-                    torch.cuda.empty_cache()
-                    is_best = (mAP > best_mAP)
-                    best_mAP = max(mAP, best_mAP)
-                    if is_best:
-                        manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                        manager.save_best_checkpoint(epoch=epoch, is_best=is_best, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                    # print('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                    #         format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                    logger.info('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                            format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                    test_logger.info('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                            format(epoch, mAP, best_mAP, ' *' if is_best else ''))                    
-                    torch.cuda.empty_cache() 
-            else:
-                model.eval()
-                for n_iter, (img, vid, camid, camids, _, captions) in enumerate(val_loader):
-                    with torch.no_grad():
-                        img = img.to(device)
-                        if cfg.MODEL.SIE_CAMERA:
-                            camids = camids.to(device)
-                        else: 
-                            camids = None
-                        if cfg.MODEL.SIE_VIEW:
-                            target_view = target_view.to(device)
-                        else: 
-                            target_view = None
-                        feat = model(img)
-                        evaluator.update((feat, vid, camid))
-                cmc, mAP, _, _, _, _, _ = evaluator.compute()
-                logger.info("Validation Results - Epoch: {}".format(epoch))
-                logger.info("mAP: {:.1%}".format(mAP))
-                for r in [1, 5, 10]:
-                    logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-                torch.cuda.empty_cache()
-                is_best = (mAP > best_mAP)
-                best_mAP = max(mAP, best_mAP)
-                if is_best:
-                    manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                    manager.save_best_checkpoint(epoch=epoch, is_best=is_best, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                # print('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                #         format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                ################## zwq debug ################ log mAP best model
-                logger.info('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                        format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                
-                torch.cuda.empty_cache()  
-            # print('eval is end') 
-            # dist.barrier()  
-def do_inference(cfg,
-                 model,
-                 val_loader,
-                 num_query):
-    device = "cuda"
+        if (
+            _is_main_process(distributed)
+            and epoch % cfg.SOLVER.CHECKPOINT_PERIOD == 0
+        ):
+            _save_checkpoint(checkpoint_manager, cfg, epoch)
+
+        should_evaluate = (
+            cfg.TEST.EVAL
+            and epoch % cfg.SOLVER.EVAL_PERIOD == 0
+            and _is_main_process(distributed)
+        )
+        if should_evaluate:
+            _, mean_ap = _evaluate(
+                model,
+                data_manager,
+                cfg,
+                device,
+                epoch,
+                test_logger,
+            )
+            is_best = mean_ap > best_mean_ap
+            best_mean_ap = max(best_mean_ap, mean_ap)
+            if is_best:
+                path = _checkpoint_path(cfg, epoch)
+                if not osp.isfile(path):
+                    path = _save_checkpoint(
+                        checkpoint_manager, cfg, epoch
+                    )
+                checkpoint_manager.save_best_checkpoint(
+                    epoch=epoch - 1,
+                    is_best=True,
+                    fpath=path,
+                )
+            train_logger.info(
+                "Epoch %d model mAP: %.1f%% best: %.1f%%%s",
+                epoch,
+                mean_ap * 100,
+                best_mean_ap * 100,
+                " *" if is_best else "",
+            )
+            torch.cuda.empty_cache()
+
+
+def do_inference(cfg, model, val_loader, num_query):
+    """Evaluate a trained visual baseline using image inputs only."""
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for CLIP-ReID inference")
+    device = torch.device("cuda", 0)
     logger = logging.getLogger("transreid.test")
-    logger.info("Enter inferencing")
+    logger.info("Enter image-only inference")
 
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-
+    evaluator = R1_mAP_eval(
+        num_query,
+        max_rank=50,
+        feat_norm=cfg.TEST.FEAT_NORM,
+    )
     evaluator.reset()
-
-    if device:
-        if torch.cuda.device_count() > 1:
-            print('Using {} GPUs for inference'.format(torch.cuda.device_count()))
-            model = nn.DataParallel(model)
-        model.to(device)
-
+    model = model.to(device)
     model.eval()
-    img_path_list = []
 
-    for n_iter, (img, pid, camid, camids, imgpath, _ ) in enumerate(val_loader):
-        print(f'imgpath: {_}')
-        with torch.no_grad():
-            img = img.to(device)
-            camids = camids.to(device)
-            feat = model(img, cam_label=camids)
-            evaluator.update((feat, pid, camid))
-            img_path_list.extend(imgpath)
+    with torch.no_grad():
+        for legacy_batch in val_loader:
+            batch = normalize_batch(legacy_batch)
+            images = batch["images"].to(device, non_blocking=True)
+            camera_labels = _camera_labels(batch, cfg, device)
+            features = model(images, cam_label=camera_labels)
+            evaluator.update(
+                (features, batch["pids"], batch["camids"])
+            )
 
-    cmc, mAP, _, _, _, _, _ = evaluator.compute()
-    logger.info("Validation Results ")
-    logger.info("mAP: {:.1%}".format(mAP))
-    for r in [1, 5, 10]:
-        logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
+    cmc, mean_ap, *_ = evaluator.compute()
+    logger.info("Validation Results")
+    logger.info("mAP: %.1f%%", mean_ap * 100)
+    for rank in (1, 5, 10):
+        logger.info("CMC curve, Rank-%-3d:%.1f%%", rank, cmc[rank - 1] * 100)
     return cmc[0], cmc[4]
-
-

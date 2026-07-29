@@ -98,7 +98,11 @@ def main() -> None:
         cfg, num_classes=manager._num_train_pids
     )
     optimizer, _ = make_optimizer(cfg, model, center_criterion)
-    scaler = torch.amp.GradScaler("cuda")
+    scaler = torch.amp.GradScaler(
+        "cuda",
+        enabled=cfg.SOLVER.AMP_ENABLED,
+        init_scale=cfg.SOLVER.AMP_INIT_SCALE,
+    )
 
     losses = []
     skipped_steps = 0

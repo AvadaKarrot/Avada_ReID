@@ -213,6 +213,8 @@ _C.SOLVER.EVAL_PERIOD = 10
 # contain 16 images per batch
 _C.SOLVER.IMS_PER_BATCH = 64
 _C.SOLVER.RESUME_TRAIN = False
+_C.SOLVER.AMP_ENABLED = True
+_C.SOLVER.AMP_INIT_SCALE = 512.0
 
 # ---------------------------------------------------------------------------- #
 # TEST
