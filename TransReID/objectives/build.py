@@ -64,4 +64,7 @@ def build_caption_objective(cfg, image_dim: int):
         temperature=float(
             _getattr_path(cfg, "OBJECTIVE.CAPTION.TEMPERATURE", 0.07)
         ),
+        positive_mode=str(
+            _getattr_path(cfg, "OBJECTIVE.CAPTION.POSITIVE_MODE", "pid")
+        ),
     )

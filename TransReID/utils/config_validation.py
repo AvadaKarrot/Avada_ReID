@@ -17,6 +17,18 @@ def validate_training_config(current_cfg):
             raise ValueError(
                 "Caption training requires OBJECTIVE.CAPTION.WEIGHT > 0"
             )
+        positive_mode = str(
+            getattr(
+                current_cfg.OBJECTIVE.CAPTION,
+                "POSITIVE_MODE",
+                "pid",
+            )
+        ).lower()
+        if positive_mode not in {"pid", "instance"}:
+            raise ValueError(
+                "OBJECTIVE.CAPTION.POSITIVE_MODE must be 'pid' or "
+                "'instance'"
+            )
     if getattr(current_cfg.MODEL, "SIE_CAMERA", False):
         raise ValueError(
             "Unified cross-domain training does not support source-camera "

@@ -116,6 +116,7 @@ _C.OBJECTIVE.CAPTION.TEXT_ENCODER = 'clip_legacy'
 _C.OBJECTIVE.CAPTION.TEXT_TRAINABLE = False
 _C.OBJECTIVE.CAPTION.PROJECTION_DIM = 512
 _C.OBJECTIVE.CAPTION.TEMPERATURE = 0.07
+_C.OBJECTIVE.CAPTION.POSITIVE_MODE = 'pid'
 
 # -----------------------------------------------------------------------------
 # INPUT

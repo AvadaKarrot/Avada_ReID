@@ -39,6 +39,34 @@ class CaptionObjectiveTest(unittest.TestCase):
         )
         self.assertLess(loss.item(), 0.001)
 
+    def test_instance_mode_keeps_only_diagonal_positives(self):
+        pids = torch.tensor([1, 1, 2])
+        positives = CaptionAlignmentObjective._positive_mask(
+            pids,
+            "instance",
+        )
+        self.assertTrue(
+            torch.equal(
+                positives,
+                torch.eye(3, dtype=torch.bool),
+            )
+        )
+
+    def test_pid_mode_keeps_same_identity_positives(self):
+        pids = torch.tensor([1, 1, 2])
+        positives = CaptionAlignmentObjective._positive_mask(pids, "pid")
+        self.assertTrue(positives[0, 1])
+        self.assertFalse(positives[0, 2])
+
+    def test_rejects_unknown_positive_mode(self):
+        with self.assertRaisesRegex(ValueError, "positive_mode"):
+            CaptionAlignmentObjective(
+                image_dim=2,
+                text_dim=2,
+                text_encoder=FakeTextEncoder(),
+                positive_mode="unknown",
+            )
+
     def test_caption_alignment_supports_masks_and_backpropagation(self):
         objective = CaptionAlignmentObjective(
             image_dim=2,

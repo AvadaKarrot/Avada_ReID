@@ -20,6 +20,7 @@ class CaptionAlignmentObjective(nn.Module):
         text_encoder: Callable[[Sequence[str]], torch.Tensor],
         projection_dim: int = 512,
         temperature: float = 0.07,
+        positive_mode: str = "pid",
     ):
         super().__init__()
         self.text_encoder = text_encoder
@@ -28,6 +29,24 @@ class CaptionAlignmentObjective(nn.Module):
         self.temperature = temperature
         if temperature <= 0:
             raise ValueError("temperature must be positive")
+        self.positive_mode = str(positive_mode).lower()
+        if self.positive_mode not in {"pid", "instance"}:
+            raise ValueError(
+                "positive_mode must be either 'pid' or 'instance'"
+            )
+
+    @staticmethod
+    def _positive_mask(
+        pids: torch.Tensor,
+        mode: str,
+    ) -> torch.Tensor:
+        if mode == "pid":
+            return pids[:, None].eq(pids[None, :])
+        return torch.eye(
+            pids.shape[0],
+            dtype=torch.bool,
+            device=pids.device,
+        )
 
     @staticmethod
     def _multi_positive_nce(
@@ -84,7 +103,10 @@ class CaptionAlignmentObjective(nn.Module):
             self.text_projection(text_features), dim=-1
         )
         logits = image_embeddings @ text_embeddings.t() / self.temperature
-        positive_mask = selected_pids[:, None].eq(selected_pids[None, :])
+        positive_mask = self._positive_mask(
+            selected_pids,
+            self.positive_mode,
+        )
         return 0.5 * (
             self._multi_positive_nce(logits, positive_mask)
             + self._multi_positive_nce(logits.t(), positive_mask.t())
