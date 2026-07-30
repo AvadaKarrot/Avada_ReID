@@ -4,11 +4,6 @@ import torch
 def make_optimizer(cfg, model, center_criterion):
     params = []
     for key, value in model.named_parameters():
-######################################################################## 
-        # 冻结 HDRPointwiseNN 中除了 self.coeffs 的其他参数
-        if 'hdrnet' in key and 'coeffs' not in key:
-            value.requires_grad = False        
-######################################################################## zwq 0602
         if 'text_encoder' in key:
             value.requires_grad = False # 不进行文本特征提取学习 冻结参数
         if 'image_encoder' in key:

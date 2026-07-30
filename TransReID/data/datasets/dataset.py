@@ -100,19 +100,6 @@ class Dataset(object):
         if self.verbose:
             self.show_summary()
 
-######################################################## 
-        # HDRNet
-        self.hdrnet = kwargs['hdrnet'] if 'hdrnet' in kwargs else False
-
-
-        if 'transform_bilateral' in kwargs and kwargs['transform_bilateral'] is not None \
-            and 'transform_low' in kwargs and kwargs['transform_low'] is not None \
-            and 'transform_full' in kwargs and kwargs['transform_full'] is not None:
-            self.transform_low = kwargs['transform_low']
-            self.transform_full = kwargs['transform_full']
-            self.transform_bilateral = kwargs['transform_bilateral']
-            self.hdrnet = True
-
     def __getitem__(self, index):
         raise NotImplementedError
 
@@ -145,10 +132,6 @@ class Dataset(object):
                 mode=self.mode,
                 combineall=False,
                 verbose=False,
-                transform_bilateral=self.transform_bilateral,
-                transform_low=self.transform_low,
-                transform_full=self.transform_full,
-                hdrnet = self.hdrnet
             )
         else:
             return VideoDataset(
@@ -345,7 +328,6 @@ class ImageDataset(Dataset):
 
     def __init__(self, train, query, gallery, **kwargs):
         super(ImageDataset, self).__init__(train, query, gallery, **kwargs)
-        self.hdrnet = kwargs['hdrnet'] if 'hdrnet' in kwargs else False
         self.caption = kwargs['caption'] if 'caption' in kwargs else False
         if self.caption:
             self.cap_num = kwargs['cap_num'] if 'cap_num' in kwargs else [0]
@@ -356,13 +338,7 @@ class ImageDataset(Dataset):
             img = read_image(img_path)
             if self.transform is not None:
                 img_ = self._transform_image(self.transform, self.k_tfm, img)
-            if self.hdrnet:
-                img_bilateral = self._transform_image(self.transform_bilateral, self.k_tfm, img)
-                low = self._transform_image(self.transform_low, self.k_tfm, img)
-                full = self._transform_image(self.transform_full, self.k_tfm, img)
-                return img_, low, full, img_bilateral, pid, camid, img_path, dsetid # 生成标签
-            else:
-                return img_, pid, camid, img_path, dsetid
+            return img_, pid, camid, img_path, dsetid
         else: ## 有caption的情况，需要在img_p, pid,camid后面加上caption, 就不加dsetid了，
             img_path, pid, camid, caption = self.data[index] # caption: str 'a person is riding a bicycle with a backpack on his back'
             img = read_image(img_path)

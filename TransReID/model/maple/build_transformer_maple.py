@@ -316,7 +316,6 @@ class build_transformer_maple(nn.Module):
         last_stride = cfg.MODEL.LAST_STRIDE
         model_path = cfg.MODEL.PRETRAIN_PATH
         model_name = cfg.MODEL.NAME
-        hdr_path = cfg.HDRNET.PRETRAIN_PATH
         pretrain_choice = cfg.MODEL.PRETRAIN_CHOICE
         self.cos_layer = cfg.MODEL.COS_LAYER
         self.neck = cfg.MODEL.NECK
@@ -359,7 +358,7 @@ class build_transformer_maple(nn.Module):
         self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](img_size=cfg.INPUT.SIZE_TRAIN, sie_xishu=cfg.MODEL.SIE_COE,
                                                         camera=camera_num, stride_size=cfg.MODEL.STRIDE_SIZE, drop_path_rate=cfg.MODEL.DROP_PATH,
                                                         drop_rate= cfg.MODEL.DROP_OUT,
-                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE, hdr=cfg.HDRNET.HDR_NET, text_feat = cfg.CLIP.TEXT_FEAT, adain_norm=cfg.MODEL.ADAIN, csa=cfg.MODEL.CSA,
+                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE, text_feat = cfg.CLIP.TEXT_FEAT, adain_norm=cfg.MODEL.ADAIN, csa=cfg.MODEL.CSA,
                                                         design_details=design_details)
 
         if pretrain_choice == 'imagenet':
@@ -429,7 +428,7 @@ class build_transformer_maple(nn.Module):
             param.requires_grad = False
         self.dtype = clip_model.dtype
 
-    def forward(self, x, label=None, cam_label= None, low = None, full=None, cal_covstat=False):
+    def forward(self, x, label=None, cam_label=None, cal_covstat=False):
         #### 文本特征(可学习prompt+类别token化)
         prompts, shared_ctx, deep_compound_prompts_text, deep_compound_prompts_vision = self.prompt_learner() #### 类别token化 
         tokenized_prompts = self.tokenized_prompts 

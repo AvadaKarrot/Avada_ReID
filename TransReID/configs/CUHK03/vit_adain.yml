@@ -58,14 +58,6 @@ TEST:
   NECK_FEAT: 'before'
   FEAT_NORM: 'yes'
 
-HDRNET:
-  HDR_NET : False
-  LUMA_BINS : 8
-  CHANNEL_MULTIPLIER : 1
-  SPATIAL_BIN : 8
-  GUIDE_COMPLEXITY : 16
-  NET_INPUT_SIZE : [256, 128]
-  PRETRAIN_PATH : '../logs/hdr/transformer_epoch190.pth'
 CLIP:
   TEXT_FEAT: False
   TEXT_FEAT_PATH: '/home/test/LIVA/ZWQ/pretrained/text_features_4.pt'

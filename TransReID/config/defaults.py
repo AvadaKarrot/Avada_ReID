@@ -244,20 +244,6 @@ _C.TEST.GRADCAM = False
 # Path to checkpoint and saved log of trained model
 _C.OUTPUT_DIR = ""
 
-#  HDRNET
-# -----------------------------------------------------------------------------
-_C.HDRNET = CN()
-_C.HDRNET.HDR_NET = False
-_C.HDRNET.LUMA_BINS = 8
-_C.HDRNET.CHANNEL_MULTIPLIER = 1
-_C.HDRNET.SPATIAL_BIN = 16
-_C.HDRNET.GUIDE_COMPLEXITY = 16
-_C.HDRNET.BATCH_NORM = True
-_C.HDRNET.NET_INPUT_SIZE = [256, 256]
-_C.HDRNET.NET_OUTPUT_SIZE = 512
-_C.HDRNET.NET_EMBEDDING = 256
-_C.HDRNET.PRETRAIN_PATH = ''
-
 ########## text feature
 _C.CLIP = CN()
 _C.CLIP.TEXT_FEAT = False
@@ -291,11 +277,3 @@ _C.MAPLE.PREC = 'fp16'
 ################### Real-Time Caption
 _C.CAPTION = CN()
 _C.CAPTION.CAP_NUM = [0]
-
-############## 频域网络 GFNet #############
-_C.GFNET = CN()
-_C.GFNET.PATCH_SIZE = 4
-_C.GFNET.EMBED_DIM = [768]
-_C.GFNET.DEPTH = [12]
-_C.GFNET.MLP_RATIO = [4]
-_C.GFNET.DROP_PATH = 0.1

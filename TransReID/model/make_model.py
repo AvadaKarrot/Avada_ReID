@@ -5,12 +5,6 @@ import copy
 from .backbones.vit_pytorch import vit_base_patch16_224_TransReID, vit_small_patch16_224_TransReID, deit_small_patch16_224_TransReID
 from loss.metric_learning import Arcface, Cosface, AMSoftmax, CircleLoss
 
-from model.backbones.hdr.hdrnet import HDRPointwiseNN
-from model.backbones.cross_attention_block import edge_CrossAttention
-from model.backbones.deformable_attention_2d import DeformableAttention2D
-
-import numpy as np
-
 def shuffle_unit(features, shift, group, begin=1):
 
     batchsize = features.size(0)
@@ -136,9 +130,6 @@ class build_transformer(nn.Module):
         self.neck_feat = cfg.TEST.NECK_FEAT
         self.in_planes = 768
 
-        ###############################zwq
-        self.hdr = cfg.HDRNET.HDR_NET
-
         print('using Transformer_type: {} as a backbone'.format(cfg.MODEL.TRANSFORMER_TYPE))
 
         if cfg.MODEL.SIE_CAMERA:
@@ -150,18 +141,10 @@ class build_transformer(nn.Module):
         else:
             view_num = 0
         
-        ############################zwq
-        if cfg.HDRNET.HDR_NET:
-            self.hdrnet = HDRPointwiseNN(cfg)
-            # self.feature_fusion = edge_CrossAttention(dim=self.in_planes, dim_edge=(int(cfg.HDRNET.NET_INPUT_SIZE[0]*cfg.HDRNET.NET_INPUT_SIZE[1]/(cfg.HDRNET.SPATIAL_BIN)**2)))
-            self.feature_fusion = edge_CrossAttention(dim=self.in_planes, dim_edge=(int(cfg.HDRNET.NET_INPUT_SIZE[0]*cfg.HDRNET.NET_INPUT_SIZE[1]/(2**(int(np.log2(cfg.HDRNET.NET_INPUT_SIZE[0]/cfg.HDRNET.SPATIAL_BIN))))**2)))
-
-            # self.feature_fusion = DeformableAttention2D(dim=self.in_planes, group_queries=False)
-
         self.base = factory[cfg.MODEL.TRANSFORMER_TYPE](img_size=cfg.INPUT.SIZE_TRAIN, sie_xishu=cfg.MODEL.SIE_COE,
                                                         camera=camera_num, view=view_num, stride_size=cfg.MODEL.STRIDE_SIZE, drop_path_rate=cfg.MODEL.DROP_PATH,
                                                         drop_rate= cfg.MODEL.DROP_OUT,
-                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE, hdr=cfg.HDRNET.HDR_NET, text_feat = cfg.CLIP.TEXT_FEAT)
+                                                        attn_drop_rate=cfg.MODEL.ATT_DROP_RATE, text_feat = cfg.CLIP.TEXT_FEAT)
         if cfg.MODEL.TRANSFORMER_TYPE == 'deit_small_patch16_224_TransReID':
             self.in_planes = 384
         if pretrain_choice == 'imagenet':
@@ -196,16 +179,9 @@ class build_transformer(nn.Module):
         self.bottleneck.bias.requires_grad_(False)
         self.bottleneck.apply(weights_init_kaiming)
 
-    def forward(self, x, label=None, cam_label= None, view_label=None, low = None, full=None):
+    def forward(self, x, label=None, cam_label=None, view_label=None):
         global_feat = self.base(x, cam_label=cam_label, view_label=view_label)
         global_feat = global_feat[:,0]
-        ###########################zwq
-        ###### HDRNet is edge feature 
-        if self.hdr:
-            edge_feat = self.hdrnet(low, full)
-            fusion_feat = global_feat + self.feature_fusion(global_feat, edge_feat)
-            global_feat = fusion_feat[:, 0]    
-        ###########################
         feat = self.bottleneck(global_feat)
 
         if self.training:

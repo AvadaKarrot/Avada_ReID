@@ -1,10 +1,10 @@
 from __future__ import division, print_function, absolute_import
+import copy
 import torch
 
 from data.sampler import build_train_sampler
 from data.datasets import init_image_dataset, init_video_dataset
 from data.transforms import build_transforms
-from data.bilateral_filter import BilateralFilter
 
 class DataManager(object):
     r"""Base data manager.
@@ -35,7 +35,6 @@ class DataManager(object):
         randomerase_prob=0.5,
         padding =10,
         sobel_prob = 0.8,
-        hdrnet = False,
         caption = False,
         cap_num = [0]
     ):
@@ -43,7 +42,6 @@ class DataManager(object):
         self.targets = targets
         self.height = height
         self.width = width
-        self.hdrnet = hdrnet
 
         if self.sources is None:
             raise ValueError('sources must not be None')
@@ -56,30 +54,16 @@ class DataManager(object):
 
         if isinstance(self.targets, str):
             self.targets = [self.targets]
-        if hdrnet:
-            self.transform_tr, self.transform_te, self.transform_bi, self.transform_low, self.transform_full = build_transforms(
-                self.height,
-                self.width,
-                transforms=transforms,
-                norm_mean=norm_mean,
-                norm_std=norm_std,
-                randomerase_prob = randomerase_prob,
-                padding = padding,
-                sobel_prob = sobel_prob,
-                hdrnet = hdrnet
-            )       
-        else:     
-            self.transform_tr, self.transform_te = build_transforms(
-                self.height,
-                self.width,
-                transforms=transforms,
-                norm_mean=norm_mean,
-                norm_std=norm_std,
-                randomerase_prob = randomerase_prob,
-                padding = padding,
-                sobel_prob = sobel_prob,
-                hdrnet = hdrnet
-            )
+        self.transform_tr, self.transform_te = build_transforms(
+            self.height,
+            self.width,
+            transforms=transforms,
+            norm_mean=norm_mean,
+            norm_std=norm_std,
+            randomerase_prob=randomerase_prob,
+            padding=padding,
+            sobel_prob=sobel_prob,
+        )
 
         self.use_gpu = (torch.cuda.is_available() and use_gpu)
 
@@ -107,15 +91,6 @@ class DataManager(object):
     def preprocess_pil_img(self, img):
         """Transforms a PIL image to torch tensor for testing."""
         return self.transform_te(img)
-
-def hdr_collate_fn(batch):
-    imgs, low, full, target, pids, camids, impaths, dsetids = zip(*batch)
-    pids = torch.tensor(pids, dtype=torch.int64)
-    camids = torch.tensor(camids, dtype=torch.int64)
-
-    return torch.stack(imgs, dim=0), torch.stack(low, dim=0),torch.stack(full, dim=0),\
-        torch.stack(target, dim=0), pids, camids, impaths, dsetids
-
 
 def collate_fn(batch):
     imgs, pids, camids, impaths, dsetids = zip(*batch)
@@ -209,6 +184,76 @@ class ImageDataManager(DataManager):
     """
     data_type = 'image'
 
+    @staticmethod
+    def _merge_source_datasets(datasets, caption=False):
+        """Merge source train splits without relying on legacy Dataset.__add__.
+
+        Dataset.__add__ assumes the fourth field is always a dataset id. In
+        this project it is a caption string when caption training is enabled,
+        while project-specific image extensions changed the tuple contract.
+        Keeping the merge here makes the ImageDataManager contract explicit
+        without changing the video data path.
+        """
+        if not datasets:
+            raise ValueError('At least one source dataset is required')
+        if len(datasets) == 1:
+            return datasets[0]
+
+        merged = copy.copy(datasets[0])
+        merged_train = []
+        pid_offset = 0
+        cam_offset = 0
+        dataset_offset = 0
+
+        for dataset in datasets:
+            for item in dataset.train:
+                img_path, pid, camid, value = item
+                if caption:
+                    merged_train.append(
+                        (img_path, pid + pid_offset, camid + cam_offset, value)
+                    )
+                else:
+                    merged_train.append(
+                        (
+                            img_path,
+                            pid + pid_offset,
+                            camid + cam_offset,
+                            value + dataset_offset,
+                        )
+                    )
+            pid_offset += dataset.num_train_pids
+            cam_offset += dataset.num_train_cams
+            dataset_offset += getattr(dataset, 'num_datasets', 1)
+
+        merged.train = merged_train
+        merged.data = merged_train
+        merged.mode = 'train'
+        merged.num_train_pids = pid_offset
+        merged.num_train_cams = cam_offset
+        if not caption:
+            merged.num_datasets = dataset_offset
+        return merged
+
+    def build_source_eval_loader(self):
+        """Build the deterministic source loader only when visualization needs it.
+
+        Model inputs use the test transform so tensors have a consistent size
+        and normalization. Each batch still carries the original image paths;
+        visualization code should read those paths to obtain untouched pixels
+        for overlays or side-by-side inspection.
+        """
+        if self._source_eval_loader is None:
+            source_evalset = copy.copy(self.train_loader.dataset)
+            source_evalset.transform = self.transform_te
+            source_evalset.mode = 'train'
+            source_evalset.data = source_evalset.train
+            self._source_eval_dataset = source_evalset
+            self._source_eval_loader = torch.utils.data.DataLoader(
+                source_evalset,
+                **self._source_eval_loader_options
+            )
+        return self._source_eval_loader
+
     def __init__(
         self,
         root='',
@@ -239,10 +284,10 @@ class ImageDataManager(DataManager):
         randomerase_prob = 0.5,
         padding = 10,
         sobel_prob = 0.8,
-        hdrnet = False,
         caption = False,
-        cap_num = [0]
+        cap_num=None
     ):
+        cap_num = [0] if cap_num is None else list(cap_num)
 
         super(ImageDataManager, self).__init__(
             sources=sources,
@@ -256,165 +301,63 @@ class ImageDataManager(DataManager):
             randomerase_prob = randomerase_prob,
             padding = padding,
             sobel_prob=sobel_prob,
-            hdrnet=hdrnet,
             caption = caption,
             cap_num = cap_num
         )
-        if hdrnet: ################ 需要生成边缘标签
-            print('=> Loading train (source) dataset')
-            trainset = []
-            for name in self.sources:
-                trainset_ = init_image_dataset(
-                    name,
-                    transform=self.transform_tr,
-                    k_tfm=k_tfm,
-                    mode='train',
-                    combineall=combineall,
-                    root=root,
-                    split_id=split_id,
-                    cuhk03_labeled=cuhk03_labeled,
-                    cuhk03_classic_split=cuhk03_classic_split,
-                    market1501_500k=market1501_500k,
-                    transform_bilateral = self.transform_bi,
-                    transform_low = self.transform_low,
-                    transform_full = self.transform_full,
-                    hdrnet = hdrnet
-                )
-                trainset.append(trainset_)
-            trainset = sum(trainset)
-            self._num_train_pids = trainset.num_train_pids
-            self._num_train_cams = trainset.num_train_cams            
-            if dist_train:
-                self.train_loader = torch.utils.data.DataLoader(
-                    trainset,
-                    batch_sampler=build_train_sampler(
-                        trainset.train,
-                        train_sampler,
-                        batch_size=batch_size_train,
-                        num_instances=num_instances,
-                        num_cams=num_cams,
-                        num_datasets=num_datasets,
-                        dist_train=dist_train
-                    ),
-                    num_workers=workers,
-                    collate_fn=hdr_collate_fn,
-                    pin_memory=self.use_gpu,
-                )
-            else:
-                self.train_loader = torch.utils.data.DataLoader(
-                    trainset,
-                    sampler=build_train_sampler(
-                        trainset.train,
-                        train_sampler,
-                        batch_size=batch_size_train,
-                        num_instances=num_instances,
-                        num_cams=num_cams,
-                        num_datasets=num_datasets,
-                        dist_train=dist_train
-                    ),
-                    batch_size=batch_size_train,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn=hdr_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )
+        dataset_options = {
+            'root': root,
+            'split_id': split_id,
+            'cuhk03_labeled': cuhk03_labeled,
+            'cuhk03_classic_split': cuhk03_classic_split,
+            'market1501_500k': market1501_500k,
+        }
+        train_options = dict(dataset_options)
+        train_options.update(caption=caption, cap_num=cap_num)
 
-        else:   ######### Important !zwq
-            print('=> Loading train (source) dataset')
-            trainset = []
-            for name in self.sources:
-                trainset_ = init_image_dataset(
-                    name,
-                    transform=self.transform_tr,
-                    k_tfm=k_tfm,
-                    mode='train',
-                    combineall=combineall,
-                    root=root,
-                    split_id=split_id,
-                    cuhk03_labeled=cuhk03_labeled,
-                    cuhk03_classic_split=cuhk03_classic_split,
-                    market1501_500k=market1501_500k,
-                    caption = caption,
-                    cap_num = cap_num 
-                )
-                trainset.append(trainset_)
-            trainset = sum(trainset)            
+        print('=> Loading train (source) dataset')
+        source_datasets = [
+            init_image_dataset(
+                name,
+                transform=self.transform_tr,
+                k_tfm=k_tfm,
+                mode='train',
+                combineall=combineall,
+                **train_options
+            )
+            for name in self.sources
+        ]
+        trainset = self._merge_source_datasets(
+            source_datasets,
+            caption=caption,
+        )
+        self._num_train_pids = trainset.num_train_pids
+        self._num_train_cams = trainset.num_train_cams
 
-            self._num_train_pids = trainset.num_train_pids
-            self._num_train_cams = trainset.num_train_cams
-            if dist_train:
-                if not caption:
-                    self.train_loader = torch.utils.data.DataLoader(
-                        trainset,
-                        batch_sampler=build_train_sampler(
-                            trainset.train,
-                            train_sampler,
-                            batch_size=batch_size_train,
-                            num_instances=num_instances,
-                            num_cams=num_cams,
-                            num_datasets=num_datasets,
-                            dist_train=dist_train
-                        ),
-                        num_workers=workers,
-                        collate_fn=collate_fn,
-                        pin_memory=self.use_gpu,
-                    )
-                else:
-                    self.train_loader = torch.utils.data.DataLoader(
-                        trainset,
-                        batch_sampler=build_train_sampler(
-                            trainset.train,
-                            train_sampler,
-                            batch_size=batch_size_train,
-                            num_instances=num_instances,
-                            num_cams=num_cams,
-                            num_datasets=num_datasets,
-                            dist_train=dist_train
-                        ),
-                        num_workers=workers,
-                        collate_fn=cap_collate_fn,
-                        pin_memory=self.use_gpu,
-                    )                    
-            else:
-                if not caption:
-                    self.train_loader = torch.utils.data.DataLoader(
-                        trainset,
-                        sampler=build_train_sampler(
-                            trainset.train,
-                            train_sampler,
-                            batch_size=batch_size_train,
-                            num_instances=num_instances,
-                            num_cams=num_cams,
-                            num_datasets=num_datasets,
-                            dist_train=dist_train
-                        ),
-                        batch_size=batch_size_train,
-                        shuffle=False,
-                        num_workers=workers,
-                        collate_fn=collate_fn,
-                        pin_memory=self.use_gpu,
-                        drop_last=False
-                    )
-                else:
-                    self.train_loader = torch.utils.data.DataLoader(
-                        trainset,
-                        sampler=build_train_sampler(
-                            trainset.train,
-                            train_sampler,
-                            batch_size=batch_size_train,
-                            num_instances=num_instances,
-                            num_cams=num_cams,
-                            num_datasets=num_datasets,
-                            dist_train=dist_train
-                        ),
-                        batch_size=batch_size_train,
-                        shuffle=False,
-                        num_workers=workers,
-                        collate_fn=cap_collate_fn,
-                        pin_memory=self.use_gpu,
-                        drop_last=False
-                    )
+        sampler = build_train_sampler(
+            trainset.train,
+            train_sampler,
+            batch_size=batch_size_train,
+            num_instances=num_instances,
+            num_cams=num_cams,
+            num_datasets=num_datasets,
+            dist_train=dist_train,
+        )
+        train_loader_options = {
+            'dataset': trainset,
+            'num_workers': workers,
+            'collate_fn': cap_collate_fn if caption else collate_fn,
+            'pin_memory': self.use_gpu,
+        }
+        if dist_train:
+            train_loader_options['batch_sampler'] = sampler
+        else:
+            train_loader_options.update(
+                sampler=sampler,
+                batch_size=batch_size_train,
+                shuffle=False,
+                drop_last=False,
+            )
+        self.train_loader = torch.utils.data.DataLoader(**train_loader_options)
         self.train_loader_t = None
         if load_train_targets:
             # check if sources and targets are identical
@@ -422,7 +365,7 @@ class ImageDataManager(DataManager):
                 'sources={} and targets={} must not have overlap'.format(self.sources, self.targets)
 
             print('=> Loading train (target) dataset')
-            trainset_t = []
+            target_trainsets = []
             for name in self.targets:
                 trainset_t_ = init_image_dataset(
                     name,
@@ -436,8 +379,8 @@ class ImageDataManager(DataManager):
                     cuhk03_classic_split=cuhk03_classic_split,
                     market1501_500k=market1501_500k
                 )
-                trainset_t.append(trainset_t_)
-            trainset_t = sum(trainset_t)
+                target_trainsets.append(trainset_t_)
+            trainset_t = self._merge_source_datasets(target_trainsets)
 
             self.train_loader_t = torch.utils.data.DataLoader(
                 trainset_t,
@@ -472,167 +415,64 @@ class ImageDataManager(DataManager):
             for name in self.targets
         }
 
-        # train_normal(即不进行任何额外的data augmentation的transet)
-        trainset_normal = []
-        for name in self.sources:
-########################################################################################################
-            trainset_normal_ = init_image_dataset(
-                name,
-                transform=self.transform_te,
-                k_tfm=k_tfm,
-                mode='train',
-                combineall=combineall,
-                root=root,
-                split_id=split_id,
-                cuhk03_labeled=cuhk03_labeled,
-                cuhk03_classic_split=cuhk03_classic_split,
-                market1501_500k=market1501_500k,
-                caption = caption,
-                cap_num = cap_num
+        eval_collate_fn = val_cap_collate_fn if caption else val_collate_fn
+        self._source_eval_loader = None
+        self._source_eval_dataset = None
+        self._source_eval_loader_options = {
+            'batch_size': batch_size_test,
+            'shuffle': False,
+            'num_workers': workers,
+            'collate_fn': eval_collate_fn,
+            'pin_memory': self.use_gpu,
+            'drop_last': False,
+        }
+
+        def build_eval_loader(dataset):
+            return torch.utils.data.DataLoader(
+                dataset,
+                batch_size=batch_size_test,
+                shuffle=False,
+                num_workers=workers,
+                collate_fn=eval_collate_fn,
+                pin_memory=self.use_gpu,
+                drop_last=False,
             )
-            trainset_normal.append(trainset_normal_)
-            trainset_normal = sum(trainset_normal)
-            self.trainset_normal = trainset_normal
-            if caption:
-                self.train_loader_normal = torch.utils.data.DataLoader(
-                    trainset_normal,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_cap_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )         
-            else:  
-                self.train_loader_normal = torch.utils.data.DataLoader(
-                    trainset_normal,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )            
 
+        def dataset_view(dataset, mode):
+            """Create a query/gallery view without parsing the dataset again."""
+            view = copy.copy(dataset)
+            view.mode = mode
+            view.data = getattr(view, mode)
+            view.verbose = False
+            return view
+
+        self.num_query_by_target = {}
         for name in self.targets:
-########################################################################################################
-            testset = []
-
-            testset_ = init_image_dataset(
+            # Parse each target once. The old implementation parsed the same
+            # manifest three times for test, query and gallery.
+            testset = init_image_dataset(
                 name,
                 transform=self.transform_te,
                 k_tfm=k_tfm,
                 mode='test',
                 combineall=combineall,
-                root=root,
-                split_id=split_id,
-                cuhk03_labeled=cuhk03_labeled,
-                cuhk03_classic_split=cuhk03_classic_split,
-                market1501_500k=market1501_500k,
-                caption = caption,
-                cap_num = cap_num
+                caption=caption,
+                cap_num=cap_num,
+                **dataset_options
             )
-            testset.append(testset_)
-            testset = sum(testset)
-            if caption:
-                self.test_loader = torch.utils.data.DataLoader(
-                    testset,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_cap_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )         
-            else:  
-                self.test_loader = torch.utils.data.DataLoader(
-                    testset,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )            
-########################################################################################################
-            # build query loader
+            queryset = dataset_view(testset, 'query')
+            galleryset = dataset_view(testset, 'gallery')
 
-            queryset = init_image_dataset(
-                name,
-                transform=self.transform_te,
-                mode='query',
-                combineall=combineall,
-                root=root,
-                split_id=split_id,
-                cuhk03_labeled=cuhk03_labeled,
-                cuhk03_classic_split=cuhk03_classic_split,
-                market1501_500k=market1501_500k,
-                caption = caption,
-                cap_num = cap_num               
-            )
-            
-            ################################ zwq return num query ###############
+            # ``test_loader`` and ``num_query`` are retained for the current
+            # single-target processor API. Per-target loaders remain available
+            # through ``test_loader_dict``.
+            self.test_loader = build_eval_loader(testset)
             self.num_query = len(queryset)
-            ####################################################################
-            if caption:
-                self.test_loader_dict[name]['query'] = torch.utils.data.DataLoader(
-                    queryset,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_cap_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )                
-            else:
-                self.test_loader_dict[name]['query'] = torch.utils.data.DataLoader(
-                    queryset,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )
-
-            # build gallery loader
-            galleryset = init_image_dataset(
-                name,
-                transform=self.transform_te,
-                mode='gallery',
-                combineall=combineall,
-                verbose=False,
-                root=root,
-                split_id=split_id,
-                cuhk03_labeled=cuhk03_labeled,
-                cuhk03_classic_split=cuhk03_classic_split,
-                market1501_500k=market1501_500k,
-                caption = caption,
-                cap_num = cap_num
-            )
-            if caption: 
-                self.test_loader_dict[name]['gallery'] = torch.utils.data.DataLoader(
-                    galleryset,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_cap_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )                
-            else:
-                self.test_loader_dict[name]['gallery'] = torch.utils.data.DataLoader(
-                    galleryset,
-                    batch_size=batch_size_test,
-                    shuffle=False,
-                    num_workers=workers,
-                    collate_fn = val_collate_fn,
-                    pin_memory=self.use_gpu,
-                    drop_last=False
-                )
-
-            self.test_dataset[name]['query'] = queryset.query
-            self.test_dataset[name]['gallery'] = galleryset.gallery
+            self.num_query_by_target[name] = self.num_query
+            self.test_loader_dict[name]['query'] = build_eval_loader(queryset)
+            self.test_loader_dict[name]['gallery'] = build_eval_loader(galleryset)
+            self.test_dataset[name]['query'] = testset.query
+            self.test_dataset[name]['gallery'] = testset.gallery
 
         print('\n')
         print('  **************** Summary ****************')

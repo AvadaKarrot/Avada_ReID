@@ -393,13 +393,11 @@ class  TransReID(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=16, stride_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0., camera=0,
-                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0, hdr=False, text_feat = False, adain_norm = False, csa=False):
+                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0, text_feat = False, adain_norm = False, csa=False):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.local_feature = local_feature
-        ###########zwq
-        self.hdr = hdr
         self.adain = adain_norm
         ######## cateeeeeeeeeeeeeeegory instance normalization CSA
         self.csa = csa  
@@ -657,7 +655,7 @@ class TransReid_Prompts(nn.Module): ##### image encoder
 
     def __init__(self, img_size=224, patch_size=16, stride_size=16, in_chans=3, num_classes=1000, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0., camera=0,
-                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0, hdr=False, text_feat = False, adain_norm = False, csa=False,
+                 drop_path_rate=0., hybrid_backbone=None, norm_layer=nn.LayerNorm, local_feature=False, sie_xishu =1.0, text_feat = False, adain_norm = False, csa=False,
                  design_details = None, text_layer=False):
         super(TransReid_Prompts, self).__init__()
         self.num_classes = num_classes

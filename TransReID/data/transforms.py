@@ -339,29 +339,4 @@ def build_transforms(
         T.ToTensor(),
         normalize,
     ])
-    if 'hdrnet' in kwargs and kwargs['hdrnet']:
-        transform_bilateral = T.Compose([
-            T.Resize([256, 128], interpolation=3),
-            # T.RandomHorizontalFlip(p=0.5),
-            # T.Pad(10),
-            # T.RandomCrop([256, 128]),
-            BilateralFilter(d=9, sigmaColor=75, sigmaSpace=75),  # 插入双边滤波 ZWQ
-            T.ToTensor(),
-            normalize,
-            # RandomErasing(probability=0.5, mode='pixel', max_count=1, device='cpu'),
-            # RandomErasing(probability=cfg.INPUT.RE_PROB, mean=cfg.INPUT.PIXEL_MEAN)
-        ])
-        transform_low = T.Compose([
-            T.Resize([256, 128], interpolation=Image.BICUBIC),
-            T.ToTensor()
-        ])
-        transform_full = T.Compose([
-            T.Resize([256, 128], interpolation=Image.BICUBIC),
-            T.ToTensor()
-        ])
-        return transform_tr, transform_te, transform_bilateral,transform_low, transform_full
-        ################### concat soble 
-    
-
-
     return transform_tr, transform_te

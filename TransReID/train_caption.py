@@ -35,7 +35,6 @@ def imagedata_kwargs(cfg):
         'randomerase_prob': cfg.INPUT.RE_PROB,
         'padding' : cfg.INPUT.PADDING,
         'sobel_prob': cfg.INPUT.SOBEL_PROB,
-        'hdrnet': cfg.HDRNET.HDR_NET,
         'caption': cfg.MODEL.CAPTION,
         'cap_num': cfg.CAPTION.CAP_NUM
         # image dataset specific
