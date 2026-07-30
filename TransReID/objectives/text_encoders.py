@@ -9,13 +9,12 @@ from torch import nn
 
 
 class LegacyCLIPTextEncoder(nn.Module):
-    """CLIP text tower loaded through the legacy MaPLe-capable loader.
+    """Plain CLIP text tower loaded from the repository's CLIP checkpoint.
 
-    The loader supplies the same CLIP checkpoint family used by the old
-    Caption/MaPLe experiments. This adapter does not claim to implement MaPLe:
-    MaPLe's learnable deep visual/text prompts are a separate model feature.
-    Only the plain text tower is retained here, and per-image captions never
-    enter ``ReIDModel``.
+    This uses the same checkpoint family as the old Caption/MaPLe experiments,
+    but deliberately builds the ordinary CoOp-compatible transformer because
+    no learnable deep MaPLe prompts are passed by this adapter. MaPLe remains a
+    separate model feature. Per-image captions never enter ``ReIDModel``.
     """
 
     def __init__(
@@ -43,7 +42,7 @@ class LegacyCLIPTextEncoder(nn.Module):
                 h_resolution,
                 w_resolution,
                 stride_h,
-                trainer="MaPLe",
+                trainer="CoOp",
             )
             tokenizer = clip.tokenize
         if tokenizer is None:
