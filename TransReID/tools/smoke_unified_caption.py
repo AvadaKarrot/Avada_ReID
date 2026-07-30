@@ -1,4 +1,4 @@
-"""One-batch GPU smoke test for source Caption and image-only target paths."""
+"""One-batch GPU smoke test for unified image-only and Caption training."""
 
 import argparse
 import json
@@ -24,7 +24,7 @@ from utils.config_validation import validate_training_config
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Smoke-test unified Caption training"
+        description="Smoke-test unified ReID training"
     )
     parser.add_argument("--config_file", required=True)
     parser.add_argument("opts", default=None, nargs=argparse.REMAINDER)
@@ -33,8 +33,7 @@ def main():
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     validate_training_config(cfg)
-    if not cfg.OBJECTIVE.CAPTION.ENABLED:
-        raise ValueError("This smoke test requires Caption supervision")
+    caption_enabled = bool(cfg.OBJECTIVE.CAPTION.ENABLED)
     cfg.freeze()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.MODEL.DEVICE_ID)
@@ -63,9 +62,18 @@ def main():
 
     source_batch = next(iter(data_manager.train_loader))
     source_named = normalize_batch(source_batch)
-    if source_named.get("captions") is None:
+    source_has_captions = source_named.get("captions") is not None
+    if caption_enabled and not source_has_captions:
         raise RuntimeError("Source smoke batch has no captions")
+    if not caption_enabled and source_has_captions:
+        raise RuntimeError(
+            "Image-only source smoke batch unexpectedly has captions"
+        )
     losses = trainer.train_step(source_batch)
+    if ("caption" in losses) != caption_enabled:
+        raise RuntimeError(
+            "Caption loss presence does not match Caption configuration"
+        )
 
     target_batch = normalize_batch(
         next(iter(data_manager.test_loader))
@@ -82,8 +90,12 @@ def main():
         json.dumps(
             {
                 "source_batch": int(source_named["images"].shape[0]),
-                "caption_valid": int(
-                    source_named["caption_mask"].sum().item()
+                "caption_enabled": caption_enabled,
+                "source_caption_input": source_has_captions,
+                "caption_valid": (
+                    int(source_named["caption_mask"].sum().item())
+                    if source_has_captions
+                    else 0
                 ),
                 "losses": {
                     name: float(value.item())
