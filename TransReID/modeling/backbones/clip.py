@@ -24,16 +24,16 @@ class CLIPViTB16Adapter(BackboneAdapter):
             if cfg is None:
                 raise ValueError("cfg is required when no CLIP encoder is supplied")
             try:
-                from model.make_model_clipreid_base import load_clip_to_cpu
+                from model.clip_loader import load_reid_clip
             except ImportError:
-                from TransReID.model.make_model_clipreid_base import load_clip_to_cpu
+                from TransReID.model.clip_loader import load_reid_clip
 
             height, width = cfg.INPUT.SIZE_TRAIN
             stride = cfg.MODEL.STRIDE_SIZE[0]
             h_resolution = int((height - 16) // cfg.MODEL.STRIDE_SIZE[0] + 1)
             w_resolution = int((width - 16) // cfg.MODEL.STRIDE_SIZE[1] + 1)
-            encoder = load_clip_to_cpu(
-                cfg, h_resolution, w_resolution, stride
+            encoder = load_reid_clip(
+                cfg, h_resolution, w_resolution, stride, trainer="CoOp"
             ).visual
 
         self.encoder = encoder

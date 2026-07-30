@@ -30,7 +30,7 @@ class LegacyCLIPTextEncoder(nn.Module):
         if clip_model is None:
             if cfg is None:
                 raise ValueError("cfg is required when clip_model is omitted")
-            from model.make_model_caption import load_clip_to_cpu_maple
+            from model.clip_loader import load_reid_clip
             from model.maple.clip import clip
 
             height, width = cfg.INPUT.SIZE_TRAIN
@@ -38,11 +38,12 @@ class LegacyCLIPTextEncoder(nn.Module):
             stride_h, stride_w = cfg.MODEL.STRIDE_SIZE
             h_resolution = int((height - patch_size) // stride_h + 1)
             w_resolution = int((width - patch_size) // stride_w + 1)
-            clip_model = load_clip_to_cpu_maple(
+            clip_model = load_reid_clip(
                 cfg,
                 h_resolution,
                 w_resolution,
                 stride_h,
+                trainer="MaPLe",
             )
             tokenizer = clip.tokenize
         if tokenizer is None:
