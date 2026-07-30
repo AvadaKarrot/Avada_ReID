@@ -6,10 +6,11 @@ from torch.nn import functional as F
 
 
 class CaptionAlignmentObjective(nn.Module):
-    """Optional source-only image/text alignment objective.
+    """PID-aware source-only image/text alignment objective.
 
     ``text_encoder`` is injected so caption generation and tokenization remain
-    independent of the visual ReID model.
+    independent of the visual ReID model. Samples with the same PID are
+    multi-positive pairs instead of false negatives.
     """
 
     def __init__(
@@ -25,12 +26,30 @@ class CaptionAlignmentObjective(nn.Module):
         self.image_projection = nn.Linear(image_dim, projection_dim, bias=False)
         self.text_projection = nn.Linear(text_dim, projection_dim, bias=False)
         self.temperature = temperature
+        if temperature <= 0:
+            raise ValueError("temperature must be positive")
+
+    @staticmethod
+    def _multi_positive_nce(
+        logits: torch.Tensor,
+        positive_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        if not positive_mask.any(dim=1).all():
+            raise RuntimeError("Every contrastive anchor needs a positive")
+        positive_logits = logits.masked_fill(
+            ~positive_mask, torch.finfo(logits.dtype).min
+        )
+        return (
+            torch.logsumexp(logits, dim=1)
+            - torch.logsumexp(positive_logits, dim=1)
+        ).mean()
 
     def forward(
         self,
         image_features: torch.Tensor,
         captions: Optional[Sequence[str]],
         valid_mask: Optional[torch.Tensor],
+        pids: torch.Tensor,
         **_,
     ) -> torch.Tensor:
         if captions is None or valid_mask is None or not valid_mask.any():
@@ -39,6 +58,12 @@ class CaptionAlignmentObjective(nn.Module):
         valid_mask = valid_mask.to(
             device=image_features.device, dtype=torch.bool
         )
+        if valid_mask.numel() != image_features.shape[0]:
+            raise ValueError("caption_mask and image batch sizes differ")
+        if pids.shape[0] != image_features.shape[0]:
+            raise ValueError("PID and image batch sizes differ")
+        if len(captions) != image_features.shape[0]:
+            raise ValueError("Caption and image batch sizes differ")
         selected_captions = [
             caption
             for caption, valid in zip(captions, valid_mask.cpu().tolist())
@@ -46,6 +71,11 @@ class CaptionAlignmentObjective(nn.Module):
         ]
         text_features = self.text_encoder(selected_captions)
         text_features = text_features.to(image_features.device)
+        if text_features.shape[0] != len(selected_captions):
+            raise ValueError(
+                "Text encoder output and selected Caption counts differ"
+            )
+        selected_pids = pids[valid_mask]
 
         image_embeddings = F.normalize(
             self.image_projection(image_features[valid_mask]), dim=-1
@@ -54,8 +84,8 @@ class CaptionAlignmentObjective(nn.Module):
             self.text_projection(text_features), dim=-1
         )
         logits = image_embeddings @ text_embeddings.t() / self.temperature
-        labels = torch.arange(logits.shape[0], device=logits.device)
+        positive_mask = selected_pids[:, None].eq(selected_pids[None, :])
         return 0.5 * (
-            F.cross_entropy(logits, labels)
-            + F.cross_entropy(logits.t(), labels)
+            self._multi_positive_nce(logits, positive_mask)
+            + self._multi_positive_nce(logits.t(), positive_mask.t())
         )

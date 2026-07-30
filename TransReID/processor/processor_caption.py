@@ -1,265 +1,252 @@
+"""Caption-assisted source training with image-only target evaluation."""
+
+from __future__ import annotations
+
 import logging
-import os
 import time
+
 import torch
-import torch.nn as nn
+from torch.nn.parallel import DistributedDataParallel
+
+from engine.batch import normalize_batch
+from processor.runtime import (
+    build_checkpointer,
+    evaluate_reid,
+    is_main_process,
+    period_due,
+    resume_training,
+    save_epoch_state,
+    synchronize,
+    unwrap_model,
+)
 from utils.meter import AverageMeter
-from utils.metrics import R1_mAP_eval
-from torch.cuda import amp
-import torch.distributed as dist
-from utils import CheckpointManager
 
-import os.path as osp
 
-from processor.validate_for_prototype import validate_for_prototype
-from processor.validate_for_cov_stat import validate_for_cov_stat
+def _camera_labels(batch, cfg, device):
+    if cfg.MODEL.SIE_CAMERA:
+        return batch["camids"].to(device, non_blocking=True)
+    return None
 
-def do_train_caption(cfg,
-             model,
-             center_criterion,
-             data_manager,
-             optimizer,
-             optimizer_center,
-             scheduler,
-             loss_fn,
-             local_rank):
-    ######################################################
-    train_loader = data_manager.train_loader
-    val_loader = data_manager.test_loader
-    ################## save best model ##################
-    best_mAP = 0
-    ################## save best model ##################
-    log_period = cfg.SOLVER.LOG_PERIOD
-    checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
-    eval_period = cfg.SOLVER.EVAL_PERIOD
 
-    device = "cuda"
-    ############## 630 zwq fix 
-    # device = torch.device("cuda")
-    epochs = cfg.SOLVER.MAX_EPOCHS
+def _caption_batch(legacy_batch):
+    batch = normalize_batch(legacy_batch)
+    captions = batch.get("captions")
+    if captions is None:
+        raise RuntimeError(
+            "Caption training requires a caption-enabled source DataLoader"
+        )
+    caption_mask = batch.get("caption_mask")
+    if caption_mask is not None and not bool(caption_mask.all()):
+        raise RuntimeError(
+            "The source batch contains missing captions; use complete "
+            "coverage or an objective that explicitly supports masking"
+        )
+    return batch
 
-    logger = logging.getLogger("transreid.train")
+
+def _forward_image_only_eval(model, legacy_batch, cfg, device):
+    batch = normalize_batch(legacy_batch)
+    if batch.get("captions") is not None:
+        raise RuntimeError(
+            "Target evaluation must not receive caption side information"
+        )
+    images = batch["images"].to(device, non_blocking=True)
+    features = model(
+        images,
+        captions=None,
+        cam_label=_camera_labels(batch, cfg, device),
+    )
+    return features, batch["pids"], batch["camids"]
+
+
+def do_train_caption(
+    cfg,
+    model,
+    center_criterion,
+    data_manager,
+    optimizer,
+    optimizer_center,
+    scheduler,
+    loss_fn,
+    local_rank,
+):
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for caption training")
+
+    distributed = bool(cfg.MODEL.DIST_TRAIN)
+    device = torch.device("cuda", local_rank)
+    model = model.to(device)
+    if distributed:
+        model = DistributedDataParallel(
+            model,
+            device_ids=[local_rank],
+            find_unused_parameters=True,
+        )
+
+    train_logger = logging.getLogger("transreid.train")
     test_logger = logging.getLogger("transreid.test")
-    if not logger.hasHandlers():  # 确保只添加一次处理器
-        handler = logging.FileHandler('train_test_log.log')
-        handler.setLevel(logging.INFO)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.info('start training')
-    _LOCAL_PROCESS_GROUP = None
-    if device:
-        model.to(local_rank)
-        if torch.cuda.device_count() >= 1 and cfg.MODEL.DIST_TRAIN: # zwq 701
-            print('Using {} GPUs for training'.format(torch.cuda.device_count()))
-            model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], find_unused_parameters=True)
-            # model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+    train_logger.info(
+        "Start caption-assisted source training with image-only target eval"
+    )
+
     loss_meter = AverageMeter()
-    acc_meter = AverageMeter()
+    accuracy_meter = AverageMeter()
+    scaler = torch.amp.GradScaler(
+        "cuda",
+        enabled=cfg.SOLVER.AMP_ENABLED,
+        init_scale=cfg.SOLVER.AMP_INIT_SCALE,
+    )
+    checkpointer = build_checkpointer(
+        cfg,
+        model=model,
+        center_criterion=center_criterion,
+        optimizer=optimizer,
+        optimizer_center=optimizer_center,
+        scheduler=scheduler,
+        scaler=scaler,
+    )
+    state = resume_training(cfg, checkpointer, train_logger)
 
-    evaluator = R1_mAP_eval(data_manager.num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-    scaler = amp.GradScaler()
-    manager = CheckpointManager(logs_dir = cfg.OUTPUT_DIR, model = model)
-
-    # train
-    for epoch in range(1, epochs + 1):
-        start_time = time.time()
+    for epoch in range(state.epoch + 1, cfg.SOLVER.MAX_EPOCHS + 1):
+        epoch_start = time.time()
         loss_meter.reset()
-        acc_meter.reset()
-        evaluator.reset()
-        scheduler.step()
-        print('ready to train')
+        accuracy_meter.reset()
         model.train()
-        # print('ready to train')
-        for n_iter, (img, vid, target_cam, _, captions) in enumerate(train_loader):
-            optimizer.zero_grad()
-            optimizer_center.zero_grad()
-            img = img.to(device)
-            target = vid.to(device)
-            target_cam = target_cam.to(device)
-            # target_view = target_view.to(device)
-            if cfg.MODEL.SIE_CAMERA:
-                target_cam = target_cam.to(device)
-            else: 
-                target_cam = None
-            with amp.autocast(enabled=True):
-                score, feat = model(img, target, captions=captions, cam_label=target_cam )
-                loss = loss_fn(score, feat, target, target_cam)
+
+        for iteration, legacy_batch in enumerate(
+            data_manager.train_loader, start=1
+        ):
+            batch = _caption_batch(legacy_batch)
+            images = batch["images"].to(device, non_blocking=True)
+            targets = batch["pids"].to(device, non_blocking=True)
+            captions = batch["captions"]
+            camera_labels = _camera_labels(batch, cfg, device)
+
+            optimizer.zero_grad(set_to_none=True)
+            optimizer_center.zero_grad(set_to_none=True)
+            with torch.amp.autocast(
+                "cuda", enabled=cfg.SOLVER.AMP_ENABLED
+            ):
+                scores, features = model(
+                    images,
+                    targets,
+                    captions=captions,
+                    cam_label=camera_labels,
+                )
+                loss = loss_fn(
+                    scores,
+                    features,
+                    targets,
+                    camera_labels,
+                )
 
             scaler.scale(loss).backward()
-            '''
-            if n_iter  == 100 and epoch == 1 :
-                for name, param in model.named_parameters():
-                    if 'text_encoder' not in name and param.grad is None:
-                        print(f'Gradient of {name}: {param.grad}') 
-            '''
+            if "center" in cfg.MODEL.METRIC_LOSS_TYPE:
+                scaler.unscale_(optimizer_center)
+                for parameter in center_criterion.parameters():
+                    if parameter.grad is not None:
+                        parameter.grad.mul_(
+                            1.0 / cfg.SOLVER.CENTER_LOSS_WEIGHT
+                        )
+                scaler.step(optimizer_center)
             scaler.step(optimizer)
             scaler.update()
 
-            if n_iter  == 10 and epoch == 1 :
-                for name, param in model.named_parameters():
-                    if 'prompt_learner' in name :
-                        print(f'Gradient of {name}: grad {param.requires_grad}') 
+            primary_score = (
+                scores[0] if isinstance(scores, list) else scores
+            )
+            accuracy = (
+                primary_score.argmax(dim=1) == targets
+            ).float().mean()
+            loss_meter.update(loss.item(), images.shape[0])
+            accuracy_meter.update(accuracy.item(), images.shape[0])
 
-            if 'center' in cfg.MODEL.METRIC_LOSS_TYPE:
-                for param in center_criterion.parameters():
-                    param.grad.data *= (1. / cfg.SOLVER.CENTER_LOSS_WEIGHT)
-                scaler.step(optimizer_center)
-                scaler.update()
-            if isinstance(score, list):
-                acc = (score[0].max(1)[1] == target).float().mean()
-            else:
-                acc = (score.max(1)[1] == target).float().mean()
+            if iteration % cfg.SOLVER.LOG_PERIOD == 0:
+                train_logger.info(
+                    "Epoch[%d] Iteration[%d/%d] Loss: %.3f, "
+                    "Acc: %.3f, Base Lr: %.2e, AMP: %.0f",
+                    epoch,
+                    iteration,
+                    len(data_manager.train_loader),
+                    loss_meter.avg,
+                    accuracy_meter.avg,
+                    scheduler.get_last_lr()[0],
+                    scaler.get_scale(),
+                )
 
-            loss_meter.update(loss.item(), img.shape[0])
-            acc_meter.update(acc, 1)
+        torch.cuda.synchronize(device)
+        elapsed = time.time() - epoch_start
+        seconds_per_batch = elapsed / max(
+            len(data_manager.train_loader), 1
+        )
+        if is_main_process(distributed):
+            train_logger.info(
+                "Epoch %d done. Time per batch: %.3f[s] "
+                "Speed: %.1f[samples/s]",
+                epoch,
+                seconds_per_batch,
+                data_manager.train_loader.batch_size / seconds_per_batch,
+            )
+        scheduler.step()
 
-            torch.cuda.synchronize()
-            if (n_iter + 1) % log_period == 0:
-                logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Acc: {:.3f}, Base Lr: {:.2e}"
-                            .format(epoch, (n_iter + 1), len(train_loader),
-                                    loss_meter.avg, acc_meter.avg, scheduler.get_lr()[0]))
+        metrics = None
+        if (
+            period_due(epoch, cfg.SOLVER.EVAL_PERIOD)
+            and is_main_process(distributed)
+        ):
+            metrics = evaluate_reid(
+                model=unwrap_model(model),
+                loader=data_manager.test_loader,
+                num_query=data_manager.num_query,
+                feat_norm=cfg.TEST.FEAT_NORM,
+                epoch=epoch,
+                forward_batch=lambda current_model, batch: (
+                    _forward_image_only_eval(
+                        current_model, batch, cfg, device
+                    )
+                ),
+                logger=test_logger,
+            )
+            torch.cuda.empty_cache()
 
-        end_time = time.time()
-        time_per_batch = (end_time - start_time) / (n_iter + 1)
-        if cfg.MODEL.DIST_TRAIN:
-            pass
-        else:
-            logger.info("Epoch {} done. Time per batch: {:.3f}[s] Speed: {:.1f}[samples/s]"
-                    .format(epoch, time_per_batch, train_loader.batch_size / time_per_batch))
+        if is_main_process(distributed):
+            is_best = save_epoch_state(
+                checkpointer=checkpointer,
+                state=state,
+                epoch=epoch,
+                max_epochs=cfg.SOLVER.MAX_EPOCHS,
+                checkpoint_period=cfg.SOLVER.CHECKPOINT_PERIOD,
+                metrics=metrics,
+                logger=train_logger,
+            )
+            if metrics is not None:
+                train_logger.info(
+                    "Epoch %d target mAP: %.1f%%; best: %.1f%% "
+                    "(epoch %d)%s",
+                    epoch,
+                    metrics["mAP"] * 100,
+                    state.best_mAP * 100,
+                    state.best_epoch,
+                    " *" if is_best else "",
+                )
+        synchronize(distributed)
 
-        if epoch % checkpoint_period == 0:
-            if cfg.MODEL.DIST_TRAIN:
-                if dist.get_rank() == 0:
-                    #############3 zwq #############
-                    manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                    # torch.save(model.state_dict(),
-                    #            os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
-            else:
-                # torch.save(model.state_dict(),
-                #            os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
-                manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-        ############## origin code for save model
-        # if epoch % checkpoint_period == 0:
-        #     if cfg.MODEL.DIST_TRAIN:
-        #         if dist.get_rank() == 0:
-        #             torch.save(model.state_dict(),
-        #                        os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
-        #     else:
-        #         torch.save(model.state_dict(),
-        #                    os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
 
-        if epoch % eval_period == 0:
-            if cfg.MODEL.DIST_TRAIN:
-                if dist.get_rank() == 0:
-                    model.eval()
-                    for n_iter, (img, vid, camid, camids, _, captions) in enumerate(val_loader):
-                        with torch.no_grad():
-                            img = img.to(device)
-                            # vid = vid.to(device)
-                            # camid = camid.to(device)
-                            camids = camids.to(device)
-                            # target_view = target_view.to(device)
-                            if cfg.MODEL.SIE_CAMERA:
-                                camids = camids
-                            else: 
-                                camids = None
-                            feat = model(img, captions=captions,cam_label=camids)
-                            evaluator.update((feat, vid, camid))
-                    cmc, mAP, _, _, _, _, _ = evaluator.compute()
-                    test_logger.info("Validation Results - Epoch: {}".format(epoch))
-                    test_logger.info("mAP: {:.1%}".format(mAP))  
-                    for r in [1, 5, 10]:
-                        test_logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-                    torch.cuda.empty_cache()
-                    is_best = (mAP > best_mAP)
-                    best_mAP = max(mAP, best_mAP)
-                    if is_best:
-                        manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                        manager.save_best_checkpoint(epoch=epoch, is_best=is_best, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                    # print('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                    #         format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                    logger.info('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                            format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                    test_logger.info('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                            format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                    torch.cuda.empty_cache() 
-            else:
-                model.eval()
-                for n_iter, (img, vid, camid, camids, _, captions) in enumerate(val_loader):
-                    with torch.no_grad():
-                        img = img.to(device)
-                        # vid = vid.to(device)
-                        # camid = camid.to(device)                        
-                        camids = camids.to(device)
-                        # target_view = target_view.to(device)
-                        if cfg.MODEL.SIE_CAMERA:
-                            camids = camids
-                        else: 
-                            camids = None
-                        feat = model(img, captions=captions,cam_label=camids)
-                        evaluator.update((feat, vid, camid))
-                cmc, mAP, _, _, _, _, _ = evaluator.compute()
-                logger.info("Validation Results - Epoch: {}".format(epoch))
-                logger.info("mAP: {:.1%}".format(mAP))
-                for r in [1, 5, 10]:
-                    logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-                torch.cuda.empty_cache()
-                is_best = (mAP > best_mAP)
-                best_mAP = max(mAP, best_mAP)
-                if is_best:
-                    manager.save(epoch=epoch, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                    manager.save_best_checkpoint(epoch=epoch, is_best=is_best, fpath=osp.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_epoch{}.pth'.format(epoch)))
-                # print('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                #         format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                ################## zwq debug ################ log mAP best model
-                test_logger.info('\n * Finished epoch {:3d}  model mAP: {:5.1%}  best: {:5.1%}{}\n'.
-                        format(epoch, mAP, best_mAP, ' *' if is_best else ''))
-                
-                torch.cuda.empty_cache()  
-            # print('eval is end') 
-            # dist.barrier()  
-def do_inference(cfg,
-                 model,
-                 val_loader,
-                 num_query):
-    device = "cuda"
+def do_inference(cfg, model, val_loader, num_query):
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for inference")
+    device = torch.device("cuda", 0)
     logger = logging.getLogger("transreid.test")
-    logger.info("Enter inferencing")
-
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-
-    evaluator.reset()
-
-    if device:
-        if torch.cuda.device_count() > 1:
-            print('Using {} GPUs for inference'.format(torch.cuda.device_count()))
-            model = nn.DataParallel(model)
-        model.to(device)
-
-    model.eval()
-    img_path_list = []
-
-    for n_iter, (img, vid, camid, camids, imgpath, captions) in enumerate(val_loader):
-        # print(f'imgpath: {imgpath}')
-        with torch.no_grad():
-            img = img.to(device)
-            # vid = vid.to(device)
-            # camid = camid.to(device)
-            camids = camids.to(device)
-            # target_view = target_view.to(device)
-            if cfg.MODEL.SIE_CAMERA:
-                camids = camids
-            else: 
-                camids = None
-            feat = model(img, captions=captions,cam_label=camids)
-            evaluator.update((feat, vid, camid))
-            img_path_list.extend(imgpath)
-
-    cmc, mAP, _, _, _, _, _ = evaluator.compute()
-    logger.info("Validation Results ")
-    logger.info("mAP: {:.1%}".format(mAP))
-    for r in [1, 5, 10]:
-        logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-    return cmc[0], cmc[4]
-
-
+    model = model.to(device)
+    metrics = evaluate_reid(
+        model=model,
+        loader=val_loader,
+        num_query=num_query,
+        feat_norm=cfg.TEST.FEAT_NORM,
+        epoch=None,
+        forward_batch=lambda current_model, batch: (
+            _forward_image_only_eval(current_model, batch, cfg, device)
+        ),
+        logger=logger,
+    )
+    return metrics["rank1"], metrics["rank5"]

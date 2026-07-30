@@ -1,0 +1,90 @@
+import unittest
+from types import SimpleNamespace
+
+import torch
+from torch import nn
+
+from objectives.losses.caption_alignment import CaptionAlignmentObjective
+from objectives.text_encoders import LegacyCLIPTextEncoder
+
+
+class FakeTextEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.anchor = nn.Parameter(torch.ones(1))
+
+    def forward(self, captions):
+        rows = []
+        for caption in captions:
+            value = 1.0 if "one" in caption else -1.0
+            rows.append(
+                torch.tensor([value, 1.0], device=self.anchor.device)
+            )
+        return torch.stack(rows) * self.anchor
+
+
+class CaptionObjectiveTest(unittest.TestCase):
+    def test_same_pid_pairs_are_all_positives(self):
+        logits = torch.tensor(
+            [
+                [10.0, 10.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 0.0, 10.0],
+            ]
+        )
+        pids = torch.tensor([1, 1, 2])
+        positives = pids[:, None].eq(pids[None, :])
+        loss = CaptionAlignmentObjective._multi_positive_nce(
+            logits, positives
+        )
+        self.assertLess(loss.item(), 0.001)
+
+    def test_caption_alignment_supports_masks_and_backpropagation(self):
+        objective = CaptionAlignmentObjective(
+            image_dim=2,
+            text_dim=2,
+            text_encoder=FakeTextEncoder(),
+            projection_dim=2,
+        )
+        images = torch.tensor(
+            [[1.0, 1.0], [1.0, 1.0], [-1.0, 1.0]],
+            requires_grad=True,
+        )
+        loss = objective(
+            image_features=images,
+            captions=("one front", "one rear", "two"),
+            valid_mask=torch.tensor([True, True, False]),
+            pids=torch.tensor([1, 1, 2]),
+        )
+        self.assertTrue(torch.isfinite(loss))
+        loss.backward()
+        self.assertIsNotNone(images.grad)
+
+    def test_legacy_clip_wrapper_retains_only_text_contract(self):
+        clip_model = SimpleNamespace(
+            token_embedding=nn.Embedding(16, 4),
+            positional_embedding=nn.Parameter(torch.zeros(3, 4)),
+            transformer=nn.Identity(),
+            ln_final=nn.Identity(),
+            text_projection=nn.Parameter(torch.randn(4, 2)),
+        )
+
+        def tokenizer(captions):
+            return torch.tensor([[1, 2, 9] for _ in captions])
+
+        encoder = LegacyCLIPTextEncoder(
+            clip_model=clip_model,
+            tokenizer=tokenizer,
+            trainable=False,
+        )
+        output = encoder(["a person", "another person"])
+        self.assertEqual(output.shape, (2, 2))
+        self.assertEqual(encoder.output_dim, 2)
+        self.assertTrue(
+            all(not parameter.requires_grad for parameter in encoder.parameters())
+        )
+        encoder.train()
+        self.assertFalse(encoder.training)
+
+if __name__ == "__main__":
+    unittest.main()

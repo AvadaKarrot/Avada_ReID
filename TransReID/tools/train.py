@@ -18,9 +18,10 @@ from config import cfg
 from data.build import build_datamanager
 from engine import Evaluator, Trainer
 from modeling import build_model
-from objectives import build_objective
+from objectives import build_caption_objective, build_objective
 from optim import build_optimizer
 from solver.lr_scheduler import WarmupMultiStepLR
+from utils.config_validation import validate_training_config
 from utils.logger import setup_logger
 
 
@@ -49,6 +50,7 @@ def main():
     args = parse_args()
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    validate_training_config(cfg)
     cfg.freeze()
 
     if cfg.MODEL.DIST_TRAIN:
@@ -56,12 +58,6 @@ def main():
             "The unified entry point will enable DDP after single-device "
             "CLIP parity is verified. Use the legacy entry point for DDP now."
         )
-    if cfg.OBJECTIVE.CAPTION.ENABLED:
-        raise NotImplementedError(
-            "Caption ingestion is intentionally gated until the generated "
-            "JSONL contract and text encoder are selected."
-        )
-
     os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.MODEL.DEVICE_ID)
     set_seed(cfg.SOLVER.SEED)
     Path(cfg.OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
@@ -70,7 +66,12 @@ def main():
 
     data_manager = build_datamanager(cfg)
     model = build_model(cfg, num_classes=data_manager._num_train_pids)
-    objective = build_objective(cfg)
+    caption_objective = build_caption_objective(
+        cfg, image_dim=model.head.embed_dim
+    )
+    objective = build_objective(
+        cfg, caption_objective=caption_objective
+    )
     optimizer = build_optimizer(cfg, model, objective)
     scheduler = WarmupMultiStepLR(
         optimizer,
@@ -96,7 +97,10 @@ def main():
         scheduler=scheduler,
         evaluator=evaluator,
         device=device,
+        amp_enabled=cfg.SOLVER.AMP_ENABLED,
+        amp_init_scale=cfg.SOLVER.AMP_INIT_SCALE,
         output_dir=cfg.OUTPUT_DIR,
+        model_name=cfg.MODEL.BACKBONE.NAME,
         log_period=cfg.SOLVER.LOG_PERIOD,
     )
     validation = {
@@ -109,6 +113,8 @@ def main():
         checkpoint_period=cfg.SOLVER.CHECKPOINT_PERIOD,
         eval_period=cfg.SOLVER.EVAL_PERIOD,
         validation=validation,
+        resume=cfg.SOLVER.RESUME_TRAIN,
+        resume_path=cfg.SOLVER.RESUME_PATH or None,
     )
 
 

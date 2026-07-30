@@ -4,14 +4,19 @@ from pathlib import Path
 import torch
 
 from .batch import normalize_batch
-from .checkpoint import save_checkpoint
+from .checkpoint import (
+    TrainingCheckpointer,
+    TrainingState,
+    period_due,
+    save_epoch_state,
+)
 
 
 class Trainer:
-    """Backbone-agnostic training loop.
+    """Backbone-agnostic single-device trainer.
 
-    The model sees only images. Optional captions are consumed by the
-    objective, preserving an image-only inference contract.
+    The model sees images only. Optional captions remain in ``batch`` and are
+    consumed exclusively by the objective.
     """
 
     def __init__(
@@ -23,7 +28,9 @@ class Trainer:
         evaluator=None,
         device="cuda",
         amp_enabled=True,
+        amp_init_scale=65536.0,
         output_dir="",
+        model_name="reid",
         log_period=100,
     ):
         self.model = model
@@ -37,18 +44,33 @@ class Trainer:
         self.log_period = log_period
         self.logger = logging.getLogger("transreid.train")
         self.scaler = torch.amp.GradScaler(
-            self.device.type, enabled=self.amp_enabled
+            self.device.type,
+            enabled=self.amp_enabled,
+            init_scale=amp_init_scale,
         )
 
         self.model.to(self.device)
         self.objective.to(self.device)
+        self.checkpointer = TrainingCheckpointer(
+            self.output_dir,
+            model=self.model,
+            model_name=model_name,
+            objective=self.objective,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            scaler=self.scaler,
+        )
 
     def train_step(self, raw_batch):
         batch = normalize_batch(raw_batch)
-        images = batch["images"].to(self.device)
-        batch["pids"] = batch["pids"].to(self.device)
+        images = batch["images"].to(self.device, non_blocking=True)
+        batch["pids"] = batch["pids"].to(
+            self.device, non_blocking=True
+        )
         if batch.get("caption_mask") is not None:
-            batch["caption_mask"] = batch["caption_mask"].to(self.device)
+            batch["caption_mask"] = batch["caption_mask"].to(
+                self.device, non_blocking=True
+            )
 
         self.optimizer.zero_grad(set_to_none=True)
         with torch.autocast(
@@ -69,9 +91,20 @@ class Trainer:
         checkpoint_period=10,
         eval_period=0,
         validation=None,
+        resume=False,
+        resume_path=None,
     ):
-        best_map = float("-inf")
-        for epoch in range(1, max_epochs + 1):
+        state = TrainingState()
+        if resume:
+            state = self.checkpointer.resume(resume_path)
+            self.logger.info(
+                "Resumed epoch %d; best target mAP %.1f%% at epoch %d",
+                state.epoch,
+                state.best_mAP * 100,
+                state.best_epoch,
+            )
+
+        for epoch in range(state.epoch + 1, max_epochs + 1):
             self.model.train()
             self.objective.train()
 
@@ -83,7 +116,10 @@ class Trainer:
                         for name, value in losses.items()
                     )
                     self.logger.info(
-                        "epoch=%d iteration=%d %s", epoch, iteration, summary
+                        "epoch=%d iteration=%d %s",
+                        epoch,
+                        iteration,
+                        summary,
                     )
 
             if self.scheduler is not None:
@@ -93,24 +129,35 @@ class Trainer:
             if (
                 validation is not None
                 and self.evaluator is not None
-                and eval_period > 0
-                and epoch % eval_period == 0
+                and period_due(epoch, eval_period)
             ):
                 metrics = self.evaluator.evaluate_loader(
                     self.model,
                     validation["loader"],
                     validation["num_query"],
                 )
-                best_map = max(best_map, metrics["mAP"])
-                self.logger.info("validation epoch=%d metrics=%s", epoch, metrics)
-
-            if checkpoint_period > 0 and epoch % checkpoint_period == 0:
-                save_checkpoint(
-                    self.output_dir / f"model_epoch_{epoch}.pth",
-                    model=self.model,
-                    objective=self.objective,
-                    optimizer=self.optimizer,
-                    scheduler=self.scheduler,
-                    epoch=epoch,
-                    extra={"metrics": metrics, "best_mAP": best_map},
+                self.logger.info(
+                    "validation epoch=%d metrics=%s", epoch, metrics
                 )
+
+            is_best = save_epoch_state(
+                checkpointer=self.checkpointer,
+                state=state,
+                epoch=epoch,
+                max_epochs=max_epochs,
+                checkpoint_period=checkpoint_period,
+                metrics=metrics,
+                logger=self.logger,
+            )
+            if metrics is not None:
+                self.logger.info(
+                    "epoch=%d target_mAP=%.4f best_mAP=%.4f "
+                    "best_epoch=%d%s",
+                    epoch,
+                    metrics["mAP"],
+                    state.best_mAP,
+                    state.best_epoch,
+                    " *" if is_best else "",
+                )
+
+        return state

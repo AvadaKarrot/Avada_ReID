@@ -1,3 +1,5 @@
+"""Legacy visual CLIP baseline retained for checkpoint parity experiments."""
+
 import argparse
 import os
 import random

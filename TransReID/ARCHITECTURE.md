@@ -83,8 +83,10 @@ Implemented:
 - CLIP, DINOv3, and SigLIP2 adapters
 - common ReID head
 - ID/triplet objective
-- optional caption-alignment interface
+- PID-aware optional caption-alignment objective
+- frozen legacy CLIP text-tower builder for source Caption supervision
 - generic trainer and image-only evaluator
+- complete latest/best/last checkpoints and exact training resume
 - unified train/evaluate entry points
 - lightweight source-caption JSONL store
 
@@ -97,6 +99,15 @@ Temporarily retained:
 The old files must remain until the refactored CLIP baseline has been compared
 against an existing checkpoint. They can then be removed one subsystem at a
 time.
+
+`train_caption.py` is now a compatibility alias for `tools/train.py`.
+`train_clipreid_base.py` remains a separate legacy parity entry point.
+
+The Caption text encoder is named `clip_legacy`: it loads the same CLIP
+checkpoint family through the old MaPLe-capable loader, but does not itself
+claim to implement MaPLe. Full MaPLe injects learnable shallow/deep prompts
+into both visual and textual Transformer blocks and must be represented as a
+separate model feature. It must not reintroduce per-image target captions.
 
 ## Caption JSONL contract
 
@@ -152,8 +163,9 @@ compact feature is represented conservatively as `mark`.
 The unified entry point deliberately rejects:
 
 - distributed training, until single-device CLIP parity is verified
-- caption training, until a concrete text encoder and generated JSONL file are
-  selected
+- legacy `MODEL.CAPTION` fusion, because it requires target text
+- source-camera/view embeddings, because they are not portable to held-out
+  target domains
 
 These gates prevent partially migrated paths from silently producing
 non-comparable experimental results.

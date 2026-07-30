@@ -18,7 +18,7 @@ class DINOv3Adapter(BackboneAdapter):
         self,
         model_name: str = "facebook/dinov3-vitb16-pretrain-lvd1689m",
         encoder: Optional[nn.Module] = None,
-        register_tokens: int = 4,
+        register_tokens: Optional[int] = None,
     ):
         super().__init__()
         if encoder is None:
@@ -32,7 +32,11 @@ class DINOv3Adapter(BackboneAdapter):
             encoder = AutoModel.from_pretrained(model_name)
 
         self.encoder = encoder
-        self.register_tokens = register_tokens
+        self.register_tokens = int(
+            register_tokens
+            if register_tokens is not None
+            else getattr(encoder.config, "num_register_tokens", 4)
+        )
         self.patch_size = int(getattr(encoder.config, "patch_size", 16))
         self.output_dim = int(getattr(encoder.config, "hidden_size", self.output_dim))
 

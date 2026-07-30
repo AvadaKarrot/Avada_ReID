@@ -112,6 +112,10 @@ _C.OBJECTIVE.CAPTION.WEIGHT = 0.0
 _C.OBJECTIVE.CAPTION.FILE = ''
 _C.OBJECTIVE.CAPTION.SELECTION = 'random'
 _C.OBJECTIVE.CAPTION.MISSING_POLICY = 'error'
+_C.OBJECTIVE.CAPTION.TEXT_ENCODER = 'clip_legacy'
+_C.OBJECTIVE.CAPTION.TEXT_TRAINABLE = False
+_C.OBJECTIVE.CAPTION.PROJECTION_DIM = 512
+_C.OBJECTIVE.CAPTION.TEMPERATURE = 0.07
 
 # -----------------------------------------------------------------------------
 # INPUT
@@ -215,6 +219,9 @@ _C.SOLVER.EVAL_PERIOD = 10
 # contain 16 images per batch
 _C.SOLVER.IMS_PER_BATCH = 64
 _C.SOLVER.RESUME_TRAIN = False
+# Optional complete checkpoint. When empty, RESUME_TRAIN uses
+# OUTPUT_DIR/checkpoint_latest.pth.tar.
+_C.SOLVER.RESUME_PATH = ""
 _C.SOLVER.AMP_ENABLED = True
 _C.SOLVER.AMP_INIT_SCALE = 512.0
 
