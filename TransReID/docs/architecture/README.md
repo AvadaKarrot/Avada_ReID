@@ -12,6 +12,7 @@
 | [02_visual_encoder.md](02_visual_encoder.md) | (B,3,256,128) → patch embed → pos_embed 插值 → MaPLe 视觉 prompt → CLS 特征 |
 | [03_text_encoder_maple.md](03_text_encoder_maple.md) | caption 字符串 → BPE (B,77) → ctx 替换构造 → Text Encoder → 图文耦合机制 |
 | [04_model_output.md](04_model_output.md) | encoder 输出 → CLS → BNNeck/classifier → ID+triplet 损失；cross-attn 融合细节；CLIP-ReID baseline 对比；隐患清单；DINOv3 迁移要点 |
+| [05_experiment_protocols.md](05_experiment_protocols.md) | DG-ReID Protocol-1/2/3 标准定义（Survey arXiv:2506.12413 §5.3）；Source/Target 轮换规则；数据集准备执行清单 |
 
 ## 一图流总览
 
