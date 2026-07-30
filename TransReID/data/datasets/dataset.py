@@ -2,6 +2,7 @@ from __future__ import division, print_function, absolute_import
 import copy
 import numpy as np
 import os.path as osp
+import random
 import tarfile
 import zipfile
 import torch
@@ -61,10 +62,7 @@ class Dataset(object):
         if len(gallery[0]) == 3:
             gallery = [(*items, 0) for items in gallery]
         
-        ########################################### caption试点
-        self.caption = kwargs['caption'] if 'caption' in kwargs else False
-        if self.caption:
-            self.cap_num = kwargs['cap_num'] if 'cap_num' in kwargs else [0]
+        self.caption_selection = kwargs.get('caption_selection', 'random')
         self.train = train
         self.query = query
         self.gallery = gallery
@@ -77,8 +75,7 @@ class Dataset(object):
 
         self.num_train_pids = self.get_num_pids(self.train)
         self.num_train_cams = self.get_num_cams(self.train)
-        if not self.caption: # 有caption的情况，不再计算num_datasets
-            self.num_datasets = self.get_num_datasets(self.train)
+        self.num_datasets = self.get_num_datasets(self.train)
 
         if self.combineall:
             self.combine_all()
@@ -328,23 +325,43 @@ class ImageDataset(Dataset):
 
     def __init__(self, train, query, gallery, **kwargs):
         super(ImageDataset, self).__init__(train, query, gallery, **kwargs)
-        self.caption = kwargs['caption'] if 'caption' in kwargs else False
-        if self.caption:
-            self.cap_num = kwargs['cap_num'] if 'cap_num' in kwargs else [0]
 
-    def __getitem__(self, index): 
-        if not self.caption:
-            img_path, pid, camid, dsetid = self.data[index]
-            img = read_image(img_path)
-            if self.transform is not None:
-                img_ = self._transform_image(self.transform, self.k_tfm, img)
-            return img_, pid, camid, img_path, dsetid
-        else: ## 有caption的情况，需要在img_p, pid,camid后面加上caption, 就不加dsetid了，
-            img_path, pid, camid, caption = self.data[index] # caption: str 'a person is riding a bicycle with a backpack on his back'
-            img = read_image(img_path)
-            if self.transform is not None:
-                img_ = self._transform_image(self.transform, self.k_tfm, img)
-            return img_, pid, camid, img_path, caption
+    def _select_caption(self, captions):
+        if not captions:
+            return ''
+        if self.caption_selection == 'random':
+            return random.choice(captions)
+        if self.caption_selection == 'first':
+            return captions[0]
+        if self.caption_selection == 'concat':
+            return ', '.join(captions)
+        raise ValueError(
+            "caption_selection must be one of ['random', 'first', 'concat'], "
+            f"got {self.caption_selection!r}"
+        )
+
+    def __getitem__(self, index):
+        item = self.data[index]
+        if len(item) == 4:
+            img_path, pid, camid, dsetid = item
+            captions = None
+        elif len(item) == 5:
+            img_path, pid, camid, dsetid, captions = item
+        else:
+            raise ValueError(
+                'Image records must contain '
+                '(path, pid, camid, dataset_id[, captions])'
+            )
+
+        img = read_image(img_path)
+        if self.transform is not None:
+            img = self._transform_image(self.transform, self.k_tfm, img)
+
+        if captions is None:
+            return img, pid, camid, img_path, dsetid
+
+        caption = self._select_caption(captions)
+        return img, pid, camid, img_path, dsetid, caption
 
     def show_summary(self):
         num_train_pids = self.get_num_pids(self.train)
@@ -357,9 +374,6 @@ class ImageDataset(Dataset):
         num_gallery_cams = self.get_num_cams(self.gallery)
 
         print('=> Loaded {}'.format(self.__class__.__name__))
-        print('  ----------------------------------------')
-        if self.caption:
-            print('Caption: {} ! using {} captions for prompt learning'.format(self.caption, self.cap_num))
         print('  ----------------------------------------')
         print('  subset   | # ids | # images | # cameras')
         print('  ----------------------------------------')

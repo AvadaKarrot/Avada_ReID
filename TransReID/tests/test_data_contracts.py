@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 
 from data.caption_store import CaptionStore
+from data.collate import caption_collate_fn
 from data.records import image_only_sample
 from engine.batch import normalize_batch
 
@@ -16,12 +17,13 @@ class DataContractTest(unittest.TestCase):
         self.assertFalse(sample.has_caption)
         self.assertEqual(sample.captions, ())
 
-    def test_caption_store_rejects_target_split(self):
+    def test_caption_store_ignores_target_split(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "captions.jsonl"
             path.write_text(
                 json.dumps(
                     {
+                        "dataset": "market1501",
                         "split": "query",
                         "image_path": "query/a.jpg",
                         "captions": ["not allowed"],
@@ -29,8 +31,77 @@ class DataContractTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaises(ValueError):
-                CaptionStore.from_jsonl(path)
+            store = CaptionStore.from_jsonl(path)
+            self.assertEqual(len(store), 0)
+            self.assertEqual(store.get("query/a.jpg", "market1501"), ())
+
+    def test_caption_store_binds_relative_train_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "captions.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "dataset": "market1501",
+                        "split": "train",
+                        "image_path": "bounding_box_train/a.jpg",
+                        "captions": ["red shirt", "dark trousers"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            store = CaptionStore.from_jsonl(path)
+            records = [
+                (
+                    "/datasets/market/bounding_box_train/a.jpg",
+                    1,
+                    2,
+                    0,
+                )
+            ]
+            bound = store.bind(records, "market1501")
+            self.assertEqual(
+                bound[0][4],
+                ("red shirt", "dark trousers"),
+            )
+
+    def test_caption_store_masks_missing_source_caption(self):
+        store = CaptionStore({})
+        records = [("/datasets/market/a.jpg", 1, 2, 0)]
+        with self.assertRaises(ValueError):
+            store.bind(records, "market1501", missing_policy="error")
+        self.assertEqual(
+            store.bind(records, "market1501", missing_policy="mask")[0][4],
+            (),
+        )
+
+    def test_caption_collate_preserves_dataset_ids_and_mask(self):
+        batch = [
+            (
+                torch.zeros(3, 8, 4),
+                1,
+                2,
+                "train/a.jpg",
+                3,
+                "red shirt",
+            ),
+            (
+                torch.ones(3, 8, 4),
+                2,
+                3,
+                "train/b.jpg",
+                4,
+                "",
+            ),
+        ]
+        collated = caption_collate_fn(batch)
+        self.assertEqual(collated["dataset_ids"], (3, 4))
+        self.assertEqual(collated["captions"], ("red shirt", ""))
+        self.assertTrue(
+            torch.equal(
+                collated["caption_mask"],
+                torch.tensor([True, False]),
+            )
+        )
 
     def test_legacy_train_tuple_preserves_paths_and_dataset_ids(self):
         batch = (

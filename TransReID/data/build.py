@@ -24,6 +24,11 @@ def imagedata_kwargs(cfg):
         "padding": cfg.INPUT.PADDING,
         "sobel_prob": cfg.INPUT.SOBEL_PROB,
         "caption": caption_enabled,
+        "caption_file": (
+            cfg.OBJECTIVE.CAPTION.FILE if caption_enabled else ""
+        ),
+        "caption_selection": cfg.OBJECTIVE.CAPTION.SELECTION,
+        "caption_missing_policy": cfg.OBJECTIVE.CAPTION.MISSING_POLICY,
     }
 
 

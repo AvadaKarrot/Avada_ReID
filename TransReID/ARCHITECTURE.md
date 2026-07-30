@@ -100,7 +100,8 @@ time.
 
 ## Caption JSONL contract
 
-Only source training records are valid:
+Caption files may preserve all official splits for auditing, but only source
+training records are indexed by the training-side `CaptionStore`:
 
 ```json
 {
@@ -121,8 +122,15 @@ Only source training records are valid:
 }
 ```
 
-`CaptionStore` rejects query/gallery records to make target-text leakage an
-explicit error. `prompt_version` is provenance metadata; legacy records without
+`CaptionStore` filters query/gallery records before binding and scopes keys by
+dataset name. It resolves an absolute dataset path against the relative
+`image_path` contract, then attaches the complete caption tuple only to source
+training records. At sampling time, `random`, `first`, or `concat` selects the
+text view; missing source captions either fail fast (`error`, the default) or
+produce a masked sample (`mask`). Target DataLoaders always retain the original
+image-only tuple contract.
+
+`prompt_version` is provenance metadata; legacy records without
 it are interpreted as V1. `attributes` is required in V2 generation artifacts
 and retained for auditing, while training continues to consume `captions`.
 V2.1 retains the V2 schema but enforces complete noun-headed item phrases and

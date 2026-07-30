@@ -110,6 +110,8 @@ _C.OBJECTIVE.CAPTION = CN()
 _C.OBJECTIVE.CAPTION.ENABLED = False
 _C.OBJECTIVE.CAPTION.WEIGHT = 0.0
 _C.OBJECTIVE.CAPTION.FILE = ''
+_C.OBJECTIVE.CAPTION.SELECTION = 'random'
+_C.OBJECTIVE.CAPTION.MISSING_POLICY = 'error'
 
 # -----------------------------------------------------------------------------
 # INPUT

@@ -4,7 +4,6 @@ import os.path as osp
 from utils.tools_from_apa import read_json, write_json, mkdir_if_missing
 
 from ..dataset import ImageDataset
-import json
 
 class CUHK03(ImageDataset):
     """CUHK03.
@@ -86,12 +85,6 @@ class CUHK03(ImageDataset):
         train = split['train']
         query = split['query']
         gallery = split['gallery']
-
-        # caption试点
-        self.caption = kwargs['caption'] if 'caption' in kwargs else False
-        if self.caption: # 有caption的情况，需要在img_p, pid,camid后面加上caption
-            self.cap_num = kwargs['cap_num'] if 'cap_num' in kwargs else False
-            train, query, gallery = self.process_caption(train, query, gallery)
 
         super(CUHK03, self).__init__(train, query, gallery, **kwargs)
 
@@ -311,51 +304,3 @@ class CUHK03(ImageDataset):
             }
         ]
         write_json(split, self.split_new_lab_json_path)
-################ caption try
-
-    def process_caption(self, train, query, gallery):
-        # caption的数据结构：{img_path: caption}
-        train_caption_path = osp.join(self.dataset_dir, 'train_caption_dict.json')
-        query_caption_path = osp.join(self.dataset_dir, 'query_caption_dict.json')
-        gallery_caption_path = osp.join(self.dataset_dir, 'gallery_caption_dict.json')
-        # test_caption_path = osp.join(self.data_dir, 'test_caption.txt')
-        # train_caption, query_caption, gallery_caption, test_caption = {}, {}, {}, {}
-
-        with open(train_caption_path, 'r') as f:
-            train_caption = json.load(f)
-        with open(query_caption_path, 'r') as f:
-            query_caption = json.load(f)
-        with open(gallery_caption_path, 'r') as f:
-            gallery_caption = json.load(f)
-        # with open(test_caption_path, 'r') as f:
-        #     for line in f:
-        #         img_path, cap = line.strip().split()
-        #         test_caption[img_path] = cap
-        def preprocess(captions):
-            processed_captions = []
-            for caption in captions:
-                # 分割句子，并只保留第一个'.'前的部分
-                first_sentence = caption.split('.')[0]
-                processed_captions.append(first_sentence.strip().lower())
-            
-            return processed_captions
-
-        for img_path, captions in train_caption.items():
-            captions = preprocess(captions)
-            selected_captions = [captions[i] for i in self.cap_num]  # 根据指定的索引选择元素
-            train_caption[img_path] = ', '.join(selected_captions) # 用逗号分隔多个caption
-        for img_path, captions in query_caption.items():
-            captions = preprocess(captions)
-            selected_captions = [captions[i] for i in self.cap_num]  # 根据指定的索引选择元素
-            query_caption[img_path] = ', '.join(selected_captions) # 用逗号分隔多个caption   
-        for img_path, captions in gallery_caption.items():
-            captions = preprocess(captions)
-            selected_captions = [captions[i] for i in self.cap_num]  # 根据指定的索引选择元素
-            gallery_caption[img_path] = ', '.join(selected_captions) # 用逗号分隔多个caption     
-             
-
-        train = [(img_path, pid, camid, train_caption[img_path]) for img_path, pid, camid in train]
-        query = [(img_path, pid, camid, query_caption[img_path]) for img_path, pid, camid in query]
-        gallery = [(img_path, pid, camid, gallery_caption[img_path]) for img_path, pid, camid in gallery]
-
-        return train, query, gallery

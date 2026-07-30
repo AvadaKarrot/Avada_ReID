@@ -2,6 +2,8 @@ from __future__ import division, print_function, absolute_import
 import copy
 import torch
 
+from data.caption_store import CaptionStore
+from data.collate import caption_collate_fn, collate_fn, val_collate_fn
 from data.sampler import build_train_sampler
 from data.datasets import init_image_dataset, init_video_dataset
 from data.transforms import build_transforms
@@ -35,13 +37,19 @@ class DataManager(object):
         randomerase_prob=0.5,
         padding =10,
         sobel_prob = 0.8,
-        caption = False,
-        cap_num = [0]
+        caption=False,
+        caption_file='',
+        caption_selection='random',
+        caption_missing_policy='error',
     ):
         self.sources = sources
         self.targets = targets
         self.height = height
         self.width = width
+        self.caption = caption
+        self.caption_file = caption_file
+        self.caption_selection = caption_selection
+        self.caption_missing_policy = caption_missing_policy
 
         if self.sources is None:
             raise ValueError('sources must not be None')
@@ -91,34 +99,6 @@ class DataManager(object):
     def preprocess_pil_img(self, img):
         """Transforms a PIL image to torch tensor for testing."""
         return self.transform_te(img)
-
-def collate_fn(batch):
-    imgs, pids, camids, impaths, dsetids = zip(*batch)
-    pids = torch.tensor(pids, dtype=torch.int64)
-    camids = torch.tensor(camids, dtype=torch.int64)
-
-    return torch.stack(imgs, dim=0), pids, camids, impaths, dsetids
-
-def cap_collate_fn(batch):
-    imgs, pids, camids, impaths, cap_text = zip(*batch)
-    pids = torch.tensor(pids, dtype=torch.int64)
-    camids = torch.tensor(camids, dtype=torch.int64)
-
-    return torch.stack(imgs, dim=0), pids, camids, impaths, cap_text
-
-def val_collate_fn(batch):
-    imgs, pids, camid, impaths, dsetids = zip(*batch)
-    pids = torch.tensor(pids, dtype=torch.int64)
-    camids = torch.tensor(camid, dtype=torch.int64)
-
-    return torch.stack(imgs, dim=0), pids, camid, camids, impaths, dsetids
-
-def val_cap_collate_fn(batch):
-    imgs, pids, camid, impaths, cap_text = zip(*batch)
-    pids = torch.tensor(pids, dtype=torch.int64)
-    camids = torch.tensor(camid, dtype=torch.int64)
-
-    return torch.stack(imgs, dim=0), pids, camid, camids, impaths, cap_text
 
 class ImageDataManager(DataManager):
     r"""Image data manager.
@@ -188,11 +168,8 @@ class ImageDataManager(DataManager):
     def _merge_source_datasets(datasets, caption=False):
         """Merge source train splits without relying on legacy Dataset.__add__.
 
-        Dataset.__add__ assumes the fourth field is always a dataset id. In
-        this project it is a caption string when caption training is enabled,
-        while project-specific image extensions changed the tuple contract.
-        Keeping the merge here makes the ImageDataManager contract explicit
-        without changing the video data path.
+        Caption-enabled records append captions as a fifth field and preserve
+        dataset id as the fourth field.
         """
         if not datasets:
             raise ValueError('At least one source dataset is required')
@@ -207,18 +184,25 @@ class ImageDataManager(DataManager):
 
         for dataset in datasets:
             for item in dataset.train:
-                img_path, pid, camid, value = item
                 if caption:
-                    merged_train.append(
-                        (img_path, pid + pid_offset, camid + cam_offset, value)
-                    )
-                else:
+                    img_path, pid, camid, dsetid, captions = item
                     merged_train.append(
                         (
                             img_path,
                             pid + pid_offset,
                             camid + cam_offset,
-                            value + dataset_offset,
+                            dsetid + dataset_offset,
+                            captions,
+                        )
+                    )
+                else:
+                    img_path, pid, camid, dsetid = item
+                    merged_train.append(
+                        (
+                            img_path,
+                            pid + pid_offset,
+                            camid + cam_offset,
+                            dsetid + dataset_offset,
                         )
                     )
             pid_offset += dataset.num_train_pids
@@ -230,8 +214,7 @@ class ImageDataManager(DataManager):
         merged.mode = 'train'
         merged.num_train_pids = pid_offset
         merged.num_train_cams = cam_offset
-        if not caption:
-            merged.num_datasets = dataset_offset
+        merged.num_datasets = dataset_offset
         return merged
 
     def build_source_eval_loader(self):
@@ -284,11 +267,12 @@ class ImageDataManager(DataManager):
         randomerase_prob = 0.5,
         padding = 10,
         sobel_prob = 0.8,
-        caption = False,
-        cap_num=None
+        caption=False,
+        caption_file='',
+        caption_selection='random',
+        caption_missing_policy='error',
+        cap_num=None,
     ):
-        cap_num = [0] if cap_num is None else list(cap_num)
-
         super(ImageDataManager, self).__init__(
             sources=sources,
             targets=targets,
@@ -301,8 +285,10 @@ class ImageDataManager(DataManager):
             randomerase_prob = randomerase_prob,
             padding = padding,
             sobel_prob=sobel_prob,
-            caption = caption,
-            cap_num = cap_num
+            caption=caption,
+            caption_file=caption_file,
+            caption_selection=caption_selection,
+            caption_missing_policy=caption_missing_policy,
         )
         dataset_options = {
             'root': root,
@@ -312,7 +298,7 @@ class ImageDataManager(DataManager):
             'market1501_500k': market1501_500k,
         }
         train_options = dict(dataset_options)
-        train_options.update(caption=caption, cap_num=cap_num)
+        train_options.update(caption_selection=caption_selection)
 
         print('=> Loading train (source) dataset')
         source_datasets = [
@@ -326,6 +312,24 @@ class ImageDataManager(DataManager):
             )
             for name in self.sources
         ]
+        if caption:
+            if not caption_file:
+                raise ValueError(
+                    'caption_file is required when caption training is enabled'
+                )
+            caption_store = CaptionStore.from_jsonl(caption_file)
+            for name, dataset in zip(self.sources, source_datasets):
+                dataset.train = caption_store.bind(
+                    dataset.train,
+                    dataset=name,
+                    missing_policy=caption_missing_policy,
+                )
+                dataset.data = dataset.train
+                covered = sum(bool(item[4]) for item in dataset.train)
+                print(
+                    f'=> Bound captions for {name}: '
+                    f'{covered}/{len(dataset.train)} source-train images'
+                )
         trainset = self._merge_source_datasets(
             source_datasets,
             caption=caption,
@@ -345,7 +349,7 @@ class ImageDataManager(DataManager):
         train_loader_options = {
             'dataset': trainset,
             'num_workers': workers,
-            'collate_fn': cap_collate_fn if caption else collate_fn,
+            'collate_fn': caption_collate_fn if caption else collate_fn,
             'pin_memory': self.use_gpu,
         }
         if dist_train:
@@ -415,14 +419,16 @@ class ImageDataManager(DataManager):
             for name in self.targets
         }
 
-        eval_collate_fn = val_cap_collate_fn if caption else val_collate_fn
+        eval_collate_fn = val_collate_fn
         self._source_eval_loader = None
         self._source_eval_dataset = None
         self._source_eval_loader_options = {
             'batch_size': batch_size_test,
             'shuffle': False,
             'num_workers': workers,
-            'collate_fn': eval_collate_fn,
+            'collate_fn': (
+                caption_collate_fn if caption else val_collate_fn
+            ),
             'pin_memory': self.use_gpu,
             'drop_last': False,
         }
@@ -456,8 +462,6 @@ class ImageDataManager(DataManager):
                 k_tfm=k_tfm,
                 mode='test',
                 combineall=combineall,
-                caption=caption,
-                cap_num=cap_num,
                 **dataset_options
             )
             queryset = dataset_view(testset, 'query')
