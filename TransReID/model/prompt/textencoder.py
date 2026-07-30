@@ -1,5 +1,5 @@
-from clip import clip
-from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
+from model.maple.clip import clip
+from model.maple.clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 import torch
 import torch.nn as nn
 import copy

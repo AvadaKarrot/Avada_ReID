@@ -1,11 +1,10 @@
-from clip import clip
-from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
+from model.maple.clip import clip
+from model.maple.clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 import torch
 import torch.nn as nn
 import copy
 from collections import OrderedDict
 _tokenizer = _Tokenizer()
-from model.maple import clip
 class PromptLearner(nn.Module):
     def __init__(self, cfg, clip_model):
         super(PromptLearner, self).__init__()
