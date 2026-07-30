@@ -21,8 +21,8 @@ INPUT:
   PIXEL_STD: [0.5, 0.5, 0.5]
 
 DATASETS:
-  SOURCES: ["market1501"]
-  TARGETS: ["msmt17"]
+  SOURCES: "market1501"
+  TARGETS: "msmt17"
   ROOT_DIR: "../data"
 
 DATALOADER:

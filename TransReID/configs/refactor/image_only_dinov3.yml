@@ -18,8 +18,8 @@ INPUT:
   PIXEL_STD: [0.229, 0.224, 0.225]
 
 DATASETS:
-  SOURCES: ["market1501"]
-  TARGETS: ["msmt17"]
+  SOURCES: "market1501"
+  TARGETS: "msmt17"
   ROOT_DIR: "../data"
 
 OUTPUT_DIR: "../logs/refactor/dinov3_market_to_msmt"
