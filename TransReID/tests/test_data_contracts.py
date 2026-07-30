@@ -1,4 +1,5 @@
 import json
+import os.path as osp
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,11 +8,31 @@ import torch
 
 from data.caption_store import CaptionStore
 from data.collate import caption_collate_fn
+from data.datasets.image.cuhk03 import _rebase_split_paths
 from data.records import image_only_sample
 from engine.batch import normalize_batch
 
 
 class DataContractTest(unittest.TestCase):
+    def test_cuhk03_split_paths_are_rebased_to_active_dataset_root(self):
+        records = [
+            ("/old/machine/cuhk03/images_detected/1_001_1_01.png", 7, 0)
+        ]
+        rebased = _rebase_split_paths(records, "/datasets/cuhk03/images_detected")
+        self.assertEqual(
+            rebased,
+            [
+                (
+                    osp.join(
+                        "/datasets/cuhk03/images_detected",
+                        "1_001_1_01.png",
+                    ),
+                    7,
+                    0,
+                )
+            ],
+        )
+
     def test_target_sample_has_no_caption(self):
         sample = image_only_sample("query/a.jpg", 1, 2, 0)
         self.assertFalse(sample.has_caption)
