@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -146,8 +148,16 @@ def make_model(cfg, num_class, camera_num, view_num):
 from model.maple.clip import clip
 def load_clip_to_cpu(cfg, h_resolution, w_resolution, vision_stride_size):
     backbone_name = cfg.MODEL.NAME
-    url = clip._MODELS[backbone_name]
-    model_path = clip._download(url)
+    configured_path = str(getattr(cfg.MODEL, "PRETRAIN_PATH", "")).strip()
+    if configured_path:
+        if not os.path.isfile(configured_path):
+            raise FileNotFoundError(
+                f"Configured CLIP checkpoint does not exist: {configured_path}"
+            )
+        model_path = configured_path
+    else:
+        url = clip._MODELS[backbone_name]
+        model_path = clip._download(url)
 
     try:
         # loading JIT archive
