@@ -100,17 +100,46 @@ to Caption supervision alone.
 | 50 | 8.535 | 27.704 |
 | 60 | **8.747** | **28.236** |
 
-## Interpretation and next gate
+## Unified CLIP image-only parity reproduction (2026-08-03)
 
-Within the unified path, both Caption variants are slightly above image-only at
-epoch 60, and PID-aware versus instance-only is nearly tied. This does not yet
-establish Caption benefit because the stronger legacy CLIP-ReID baseline has not
-been reproduced by the unified path. The next model-development gate remains:
+The earlier unified diagnostics above used a deliberately simplified single
+head and must not be used as the image-only control for Caption experiments.
+Commit `87eaafae48dc20fe71294fa167c47a65a7609290` completed the parity gate by
+adding the legacy CLIP outputs, two ID branches, three triplet branches,
+optimizer parameter groups, augmentation and schedule to the unified API.
 
-1. reproduce legacy visual outputs, dual heads, loss composition, optimizer,
-   schedule, augmentation, and 1,280-D test feature inside the unified API;
-2. verify Market -> MSMT17 returns near the legacy 20.2% best mAP;
-3. add Caption as the only changed variable.
+- Entry: `tools/train.py`.
+- Config: `configs/experiments/clip_market_to_msmt_image_only.yml`.
+- Numerical gate: `tools/validate_clip_image_only_parity.py`.
+- Log:
+  `/root/autodl-tmp/logs/unified_clipreid_parity_market_to_msmt17_seed1234.log`.
+- Output:
+  `/root/autodl-tmp/experiments/unified_clipreid_parity/market_to_msmt17/seed_1234`.
+- Test feature: raw 768-D + projected 512-D concatenation (1,280-D).
+
+Before the full run, the legacy and unified implementations were compared on
+the same real source and target batches. The four head parameter comparisons,
+two ID logits, three triplet features and target embedding all had zero maximum
+absolute difference. Total loss differed by only `1.91e-6`.
+
+| Epoch | Legacy mAP | Unified mAP | Legacy R1 | Unified R1 |
+|---:|---:|---:|---:|---:|
+| 10 | 18.7 | 18.880 | 44.1 | 44.867 |
+| 20 | **20.2** | **20.149** | **45.3** | **45.167** |
+| 30 | 18.5 | 18.611 | 42.5 | 42.534 |
+| 40 | 18.5 | 18.937 | 42.1 | 42.860 |
+| 50 | 18.5 | 18.591 | 41.9 | 42.002 |
+| 60 | 18.5 | 18.826 | 41.7 | 42.328 |
+
+Both implementations select epoch 20 as best and show the same subsequent
+trajectory. The unified best differs from the legacy result by only 0.051 mAP
+and 0.133 Rank-1 percentage points, so the image-only parity gate passes.
+`model_best.pth.tar` is the epoch-20 checkpoint; epoch 10 through 60, latest
+and last complete checkpoints were all verified.
+
+The next controlled experiment may add Caption supervision to this parity
+model while leaving its data, visual branches, ReID losses, optimizer, schedule
+and image-only target evaluation unchanged.
 
 ## Caption corpus state before Protocol-3 extension
 
