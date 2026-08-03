@@ -29,6 +29,18 @@ EXPECTED_PROTOCOLS = {
     ),
 }
 
+ALLOWED_SOLVER_OVERRIDES = {
+    "MAX_EPOCHS",
+    "BASE_LR",
+    "WARMUP_ITERS",
+    "WARMUP_FACTOR",
+    "WARMUP_METHOD",
+    "STEPS",
+    "GAMMA",
+    "EVAL_PERIOD",
+    "CHECKPOINT_PERIOD",
+}
+
 
 def load_protocol2_matrix(path):
     with Path(path).open("r", encoding="utf-8") as handle:
@@ -42,6 +54,14 @@ def validate_protocol2_matrix(matrix):
         raise ValueError("Matrix protocol must be 'Protocol-2'")
     if matrix.get("combineall") is not False:
         raise ValueError("Protocol-2 requires combineall=false")
+
+    solver_overrides = matrix.get("solver_overrides", {})
+    unknown_solver_keys = set(solver_overrides) - ALLOWED_SOLVER_OVERRIDES
+    if unknown_solver_keys:
+        raise ValueError(
+            "Unsupported Protocol-2 solver overrides: "
+            f"{sorted(unknown_solver_keys)}"
+        )
 
     runs = matrix.get("runs", [])
     if len(runs) != 6:
@@ -77,7 +97,7 @@ def validate_protocol2_matrix(matrix):
 
 
 def config_overrides(matrix, run):
-    return [
+    overrides = [
         "DATASETS.SOURCES",
         ",".join(run["sources"]),
         "DATASETS.TARGETS",
@@ -87,3 +107,9 @@ def config_overrides(matrix, run):
         "OUTPUT_DIR",
         run["output_dir"],
     ]
+    for key, value in matrix.get("solver_overrides", {}).items():
+        serialized = json.dumps(value) if isinstance(value, list) else str(value)
+        overrides.extend(
+            [f"SOLVER.{key}", serialized]
+        )
+    return overrides

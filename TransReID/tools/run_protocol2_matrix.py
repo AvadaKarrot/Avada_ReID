@@ -63,10 +63,11 @@ def _command(matrix, run, mode, *, resume=False):
         *config_overrides(matrix, run),
     ]
     if mode == "smoke":
-        smoke_output = (
-            "/root/autodl-tmp/experiments/protocol2/smoke/"
-            + run["name"]
+        smoke_root = matrix.get(
+            "smoke_output_root",
+            "/root/autodl-tmp/experiments/protocol2/smoke",
         )
+        smoke_output = str(Path(smoke_root) / run["name"])
         command.extend(
             [
                 "SOLVER.IMS_PER_BATCH",

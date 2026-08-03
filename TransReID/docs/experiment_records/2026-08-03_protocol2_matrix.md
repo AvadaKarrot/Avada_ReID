@@ -50,3 +50,11 @@ from `checkpoint_latest.pth.tar` when available, and requires
 log and complete/failed marker under `/root/autodl-tmp/logs/protocol2_clip`.
 
 Results will be appended only after full checkpoint and metric validation.
+
+## Successor schedule
+
+This 60-epoch matrix is retained as a schedule diagnostic. The subsequently
+confirmed official experiment schedule is documented in
+`docs/experiment_records/2026-08-03_protocol2_30ep_matrix.md`: 30 epochs,
+evaluation and checkpointing every 5 epochs, unchanged base learning rate,
+5 warmup epochs, and learning-rate milestones at epochs 15 and 25.
