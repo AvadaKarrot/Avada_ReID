@@ -92,3 +92,40 @@ The previous steady Market generation rate was approximately 3.59 images/s.
 The remaining 16,483 images require about 76.5 minutes of inference, plus model
 startup and final validation. The operational estimate is 1 hour 18 minutes to
 1 hour 30 minutes on the RTX PRO 6000.
+
+## Completion result
+
+The Market full-source extension completed successfully on 2026-08-03.
+
+- Server supervisor start: 2026-08-03 14:13:15 +08:00.
+- Generator completion: 2026-08-03 15:30:18 +08:00.
+- Full validation completion: 2026-08-03 15:30:42 +08:00.
+- Generator-reported inference time: 76.1 minutes at approximately 3.61
+  images/s.
+- Run commit: `ea47cbb913d0be6a8d31c5ea339d1359759e263f`.
+
+Strict artifact validation passed:
+
+| Artifact | Result |
+|---|---|
+| Market raw | 29,419; train 12,936 / query 3,368 / gallery 13,115 |
+| Market clean | 29,419; invalid JSON 0 / dropped 0 / low-caption 0 |
+| Final contract | 204,531 unique V2.4 records |
+| CUHK03 | 14,097 |
+| CUHK-SYSU | 34,574 |
+| Market-1501 | 29,419 |
+| MSMT17_V1 | 126,441 |
+
+The real Protocol-3 DataManager gate also passed for
+Market-1501 + MSMT17 + CUHK-SYSU -> CUHK03:
+
+- combined source images: 190,434;
+- Caption-covered source images: 190,434;
+- missing source Caption: 0;
+- target batch type: original tuple contract;
+- target Caption fields: absent.
+
+The vLLM process emitted the known `libnvrtc.so.13` exception only during
+shutdown resource cleanup. Generation had already reached 29,419/29,419 and
+all downstream raw, clean, final-contract, and DataManager validations passed,
+so this is recorded as a non-blocking environment warning.
