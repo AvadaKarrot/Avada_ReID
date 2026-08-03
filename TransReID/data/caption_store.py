@@ -13,10 +13,11 @@ def _normalize_path(path) -> str:
 class CaptionStore:
     """Read-only caption sidecar used only for source-domain training.
 
-    Caption files may contain every official split. Only ``train`` records are
-    indexed, so query/gallery text can never enter the ReID evaluation path.
-    Keys are scoped by dataset name to prevent collisions in multi-source
-    training.
+    Caption files may contain every official split. Standard training indexes
+    only ``train``. Protocol-3 full-source training may explicitly index all
+    source splits; captions are still bound only to source datasets and never
+    enter the target-domain evaluation loader. Keys are scoped by dataset name
+    to prevent collisions in multi-source training.
     """
 
     def __init__(
@@ -26,7 +27,16 @@ class CaptionStore:
         self._captions = captions
 
     @classmethod
-    def from_jsonl(cls, path) -> "CaptionStore":
+    def from_jsonl(
+        cls,
+        path,
+        allowed_splits: Iterable[str] = ("train",),
+    ) -> "CaptionStore":
+        allowed_splits = {
+            str(split).strip().lower() for split in allowed_splits
+        }
+        if not allowed_splits:
+            raise ValueError("allowed_splits must not be empty")
         captions = {}
         with open(path, "r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
@@ -39,7 +49,8 @@ class CaptionStore:
                         f"{path}:{line_number} is not valid JSON"
                     ) from exc
 
-                if str(record.get("split", "train")).lower() != "train":
+                split = str(record.get("split", "train")).strip().lower()
+                if split not in allowed_splits:
                     continue
 
                 dataset = str(record.get("dataset", "")).strip().lower()

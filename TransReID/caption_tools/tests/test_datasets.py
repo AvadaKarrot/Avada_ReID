@@ -11,6 +11,71 @@ sys.path.insert(0, str(CAPTION_TOOLS))
 from datasets import iter_caption_images, iter_source_train_images  # noqa: E402
 
 
+class Market1501DatasetTests(unittest.TestCase):
+    def _make_layout(self, root: Path) -> Path:
+        dataset_dir = root / "market"
+        for directory in (
+            "bounding_box_train",
+            "query",
+            "bounding_box_test",
+        ):
+            (dataset_dir / directory).mkdir(parents=True)
+        files = {
+            "bounding_box_train": (
+                "0001_c1s1_000001_00.jpg",
+                "0000_c1s1_000002_00.jpg",
+            ),
+            "query": ("0002_c2s1_000003_00.jpg",),
+            "bounding_box_test": (
+                "0002_c3s1_000004_00.jpg",
+                "0000_c3s1_000005_00.jpg",
+                "-1_c3s1_000006_00.jpg",
+            ),
+        }
+        for directory, names in files.items():
+            for name in names:
+                (dataset_dir / directory / name).write_bytes(name.encode())
+        return dataset_dir
+
+    def test_train_scope_keeps_historical_train_only_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_layout(root)
+            records = list(iter_source_train_images("market1501", str(root)))
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].split, "train")
+        self.assertEqual(
+            records[0].image_path,
+            "bounding_box_train/0001_c1s1_000001_00.jpg",
+        )
+
+    def test_full_scope_matches_combine_all_junk_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_layout(root)
+            records = list(
+                iter_caption_images(
+                    "market1501", str(root), split_scope="full"
+                )
+            )
+
+        self.assertEqual(
+            [record.split for record in records],
+            ["train", "query", "gallery"],
+        )
+        self.assertEqual(
+            [record.pid for record in records],
+            [1, 2, 2],
+        )
+        first_tokens = {
+            Path(record.image_path).stem.split("_")[0]
+            for record in records
+        }
+        self.assertNotIn("0000", first_tokens)
+        self.assertNotIn("-1", first_tokens)
+
+
 class MSMT17V1DatasetTests(unittest.TestCase):
     def _make_v1_layout(self, root: Path) -> Path:
         version_dir = root / "msmt17" / "MSMT17_V1"

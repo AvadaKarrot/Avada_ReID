@@ -56,6 +56,48 @@ class DataContractTest(unittest.TestCase):
             self.assertEqual(len(store), 0)
             self.assertEqual(store.get("query/a.jpg", "market1501"), ())
 
+    def test_caption_store_can_index_explicit_full_source_splits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "captions.jsonl"
+            records = [
+                {
+                    "dataset": "market1501",
+                    "split": "train",
+                    "image_path": "bounding_box_train/a.jpg",
+                    "captions": ["train caption"],
+                },
+                {
+                    "dataset": "market1501",
+                    "split": "query",
+                    "image_path": "query/b.jpg",
+                    "captions": ["query caption"],
+                },
+                {
+                    "dataset": "market1501",
+                    "split": "gallery",
+                    "image_path": "bounding_box_test/c.jpg",
+                    "captions": ["gallery caption"],
+                },
+            ]
+            path.write_text(
+                "\n".join(json.dumps(record) for record in records) + "\n",
+                encoding="utf-8",
+            )
+            store = CaptionStore.from_jsonl(
+                path,
+                allowed_splits=("train", "query", "gallery"),
+            )
+
+        self.assertEqual(len(store), 3)
+        self.assertEqual(
+            store.get("query/b.jpg", "market1501"),
+            ("query caption",),
+        )
+        self.assertEqual(
+            store.get("bounding_box_test/c.jpg", "market1501"),
+            ("gallery caption",),
+        )
+
     def test_caption_store_binds_relative_train_path(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "captions.jsonl"

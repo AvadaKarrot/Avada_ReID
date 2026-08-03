@@ -55,13 +55,17 @@ class DataManager(object):
             raise ValueError('sources must not be None')
 
         if isinstance(self.sources, str):
-            self.sources = [self.sources]
+            self.sources = [
+                name.strip() for name in self.sources.split(',') if name.strip()
+            ]
 
         if self.targets is None:
             self.targets = self.sources
 
         if isinstance(self.targets, str):
-            self.targets = [self.targets]
+            self.targets = [
+                name.strip() for name in self.targets.split(',') if name.strip()
+            ]
         self.transform_tr, self.transform_te = build_transforms(
             self.height,
             self.width,
@@ -317,7 +321,15 @@ class ImageDataManager(DataManager):
                 raise ValueError(
                     'caption_file is required when caption training is enabled'
                 )
-            caption_store = CaptionStore.from_jsonl(caption_file)
+            allowed_caption_splits = (
+                ("train", "val", "query", "gallery")
+                if combineall
+                else ("train",)
+            )
+            caption_store = CaptionStore.from_jsonl(
+                caption_file,
+                allowed_splits=allowed_caption_splits,
+            )
             for name, dataset in zip(self.sources, source_datasets):
                 dataset.train = caption_store.bind(
                     dataset.train,

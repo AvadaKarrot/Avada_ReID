@@ -9,6 +9,7 @@ def imagedata_kwargs(cfg):
         "root": cfg.DATASETS.ROOT_DIR,
         "sources": cfg.DATASETS.SOURCES,
         "targets": cfg.DATASETS.TARGETS,
+        "combineall": bool(getattr(cfg.DATASETS, "COMBINEALL", False)),
         "height": cfg.INPUT.SIZE_TRAIN[0],
         "width": cfg.INPUT.SIZE_TRAIN[1],
         "transforms": cfg.DATASETS.TRANSFORMS,

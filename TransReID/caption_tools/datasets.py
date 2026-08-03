@@ -2,12 +2,12 @@
 
 职责：
     为 5 个源域 ReID 数据集（market1501 / msmt17 / cuhk03 / cuhksysu / cuhk02）
-    提供统一的 train split 图片遍历接口，产出 ImageRecord 迭代器。
+    提供统一且协议感知的图片遍历接口，产出 ImageRecord 迭代器。
 
 训练侧契约（来自 TransReID/ARCHITECTURE.md）：
     - image_path 必须是"相对数据集目录"的路径，如 bounding_box_train/0002_c1s1_000451_03.jpg；
-    - 只允许 train split（目标域 query/gallery 的文本会被 CaptionStore 拒绝，防泄漏）；
-    - 本模块只遍历源域 train 目录，天然满足该约束。
+    - Protocol-2 只遍历源域 train；Protocol-3 可遍历完整源域；
+    - 目标域 query/gallery 永远不绑定 Caption，推理保持 image-only。
 
 兼容性说明：
     各数据集在磁盘上的目录布局存在历史变体（如 MSMT17 V1/V2、CUHK03 detected/labeled），
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator
 
-# 当前 caption 生成任务仅覆盖这 5 个源域数据集的 train 部分
+# 当前 Caption 生成任务覆盖这 5 个源域数据集的协议所需 split。
 SUPPORTED_DATASETS: list[str] = ["market1501", "msmt17", "cuhk03", "cuhksysu", "cuhk02"]
 
 # 图片扩展名白名单（大小写不敏感）
@@ -32,11 +32,11 @@ SPLIT_SCOPES: tuple[str, ...] = ("train", "trainval", "full", "all")
 
 @dataclass(frozen=True)
 class ImageRecord:
-    """单张训练图片的元信息。
+    """单张协议图片的元信息。
 
     Attributes:
         dataset: 数据集名（如 "market1501"）。
-        split: 固定为 "train"（契约要求，禁止其他 split）。
+        split: 官方 split 名称（train/val/query/gallery）。
         image_path: 相对数据集目录的路径，如 "bounding_box_train/0002_c1s1_000451_03.jpg"。
         abs_path: 图片在磁盘上的绝对路径（供读取/送推理使用）。
         pid: 行人 ID（整数）。
@@ -105,6 +105,60 @@ def _iter_market1501(data_root: str) -> Iterator[ImageRecord]:
             abs_path=str(img.resolve()),
             pid=pid,
         )
+
+
+def _iter_market1501_splits(
+    data_root: str,
+    split_names: tuple[str, ...],
+) -> Iterator[ImageRecord]:
+    """Enumerate the Market-1501 splits used by DG full-source training.
+
+    ``bounding_box_test`` contains both ``-1`` junk detections and PID ``0``
+    background distractors.  The training-side ``Dataset.combine_all`` drops
+    both categories, so caption generation applies the same rule and does not
+    spend GPU time on images that can never enter Protocol-3 training.
+    """
+
+    root = Path(data_root)
+    train_dir = _pick_existing_dir(
+        [
+            root / "market" / "bounding_box_train",
+            root / "Market-1501-v15.09.15" / "bounding_box_train",
+        ],
+        "market1501",
+    )
+    dataset_dir = train_dir.parent
+    split_dirs = {
+        "train": dataset_dir / "bounding_box_train",
+        "query": dataset_dir / "query",
+        "gallery": dataset_dir / "bounding_box_test",
+    }
+    seen_paths: set[str] = set()
+    for split in split_names:
+        directory = split_dirs.get(split)
+        if directory is None:
+            raise ValueError(f"[market1501] unsupported split: {split!r}")
+        if not directory.is_dir():
+            raise FileNotFoundError(
+                f"[market1501] missing official {split} directory: {directory}"
+            )
+        for image in _iter_images_in_dir(directory):
+            first_token = image.stem.split("_")[0]
+            if first_token in ("0000", "-1"):
+                continue
+            image_path = f"{directory.name}/{image.name}"
+            if image_path in seen_paths:
+                raise ValueError(
+                    f"[market1501] duplicate image across splits: {image_path}"
+                )
+            seen_paths.add(image_path)
+            yield ImageRecord(
+                dataset="market1501",
+                split=split,
+                image_path=image_path,
+                abs_path=str(image.resolve()),
+                pid=int(first_token),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +581,14 @@ def iter_caption_images(
         )
     if scope == "train":
         yield from iter_source_train_images(key, data_root)
+        return
+    if key == "market1501":
+        names = (
+            ("train",)
+            if scope == "trainval"
+            else ("train", "query", "gallery")
+        )
+        yield from _iter_market1501_splits(data_root, names)
         return
     if key == "cuhk03":
         names = ("train", "query", "gallery")

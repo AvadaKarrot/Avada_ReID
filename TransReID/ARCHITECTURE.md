@@ -111,8 +111,9 @@ separate model feature. It must not reintroduce per-image target captions.
 
 ## Caption JSONL contract
 
-Caption files may preserve all official splits for auditing, but only source
-training records are indexed by the training-side `CaptionStore`:
+Caption files may preserve all official splits for auditing. Protocol-2 indexes
+only source `train` records. Protocol-3 explicitly enables
+`DATASETS.COMBINEALL` and indexes every official source split:
 
 ```json
 {
@@ -133,13 +134,15 @@ training records are indexed by the training-side `CaptionStore`:
 }
 ```
 
-`CaptionStore` filters query/gallery records before binding and scopes keys by
-dataset name. It resolves an absolute dataset path against the relative
-`image_path` contract, then attaches the complete caption tuple only to source
-training records. At sampling time, `random`, `first`, or `concat` selects the
-text view; missing source captions either fail fast (`error`, the default) or
-produce a masked sample (`mask`). Target DataLoaders always retain the original
-image-only tuple contract.
+`CaptionStore` filters non-training splits by default and scopes keys by dataset
+name. In Protocol-3, that filter is widened only for datasets configured as
+sources. It resolves an absolute dataset path against the relative `image_path`
+contract, then attaches the complete caption tuple only to source training
+records. At sampling time, `random`, `first`, or `concat` selects the text view;
+missing source captions either fail fast (`error`, the default) or produce a
+masked sample (`mask`). Target DataLoaders always retain the original image-only
+tuple contract, including when the same named dataset is a target in another
+leave-one-out run.
 
 `prompt_version` is provenance metadata; legacy records without
 it are interpreted as V1. `attributes` is required in V2 generation artifacts

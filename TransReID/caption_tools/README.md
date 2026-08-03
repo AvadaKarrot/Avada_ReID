@@ -19,14 +19,15 @@
 历史 JSONL 没有 `prompt_version` 时自动按 `v1` 读取，不会修改原文件。
 
 > ⚠️ 训练约束：全量 Caption 资产可以保留官方 `train/val/query/gallery`
-> 标签，但训练侧必须显式筛选源域 `train`。目标域推理仍只允许图像输入，
-> 不得读取 query/gallery Caption，避免文本泄漏。
+> 标签。Protocol-2 只索引源域 `train`；Protocol-3 只有在显式开启
+> `DATASETS.COMBINEALL` 时才索引完整源域。目标域推理始终只允许图像输入，
+> 不得读取目标 query/gallery Caption。
 
-## 覆盖数据集（Protocol-1 + Protocol-2 源域）
+## 覆盖数据集（Protocol-1/2/3 源域）
 
 | 数据集 | 目录约定（`--data-root` 下） | 规模 |
 |---|---|---|
-| market1501 | `market/bounding_box_train/` | ~1.3 万 |
+| market1501 | `market/{bounding_box_train,query,bounding_box_test}/`；full 自动排除 PID 0/-1 | 29,419 full |
 | msmt17 | `msmt17/MSMT17_V1/{train,test}/<pid>/` + 官方 `list_*.txt`（V2 同样按 manifest 读取） | 126,441 all |
 | cuhk03 | `cuhk03/images_detected/` + `splits_new_detected.json` | 14,097 all |
 | cuhksysu | `cuhksysu/cropped_images/`（全部图片即训练集，train-only） | ~3.5 万 |
@@ -74,9 +75,21 @@ python generate_captions.py --dataset market1501 --data-root /root/autodl-tmp/da
 python generate_captions.py --dataset market1501 --data-root /root/autodl-tmp/data \
     --prompt-version v2.4 --output-dir ./output/smoke/v2.4 --limit 200
 
-# 步骤 1：批量生成（冻结 Prompt V2.4；支持中断续跑，重跑同一命令即可）
-python generate_captions.py --dataset all --data-root /root/autodl-tmp/data \
-    --config configs/default.yaml --split-scope all
+# 步骤 1A：Protocol-2（只生成源域 train）
+python generate_captions.py --dataset market1501 \
+    --data-root /root/autodl-tmp/datasets \
+    --output-dir ./output/raw/v2.4 --config configs/default.yaml \
+    --split-scope train --prompt-version v2.4
+
+# 步骤 1B：Protocol-3 Market full-source 扩展。
+# 如果同一输出已有 12,936 条 train，断点续跑只生成缺少的 16,483 条。
+python generate_captions.py --dataset market1501 \
+    --data-root /root/autodl-tmp/datasets \
+    --output-dir ./output/raw/v2.4 --config configs/default.yaml \
+    --split-scope full --prompt-version v2.4
+
+# 其他 Protocol-3 源域：MSMT17 用 all（含 val），CUHK03 用 full/all，
+# CUHK-SYSU 本身是 train-only，继续使用 train。
 
 # 步骤 2：清洗（训练只使用 clean；raw 仅用于审计生成质量）
 for d in market1501 msmt17 cuhk03 cuhksysu cuhk02; do

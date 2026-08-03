@@ -151,6 +151,9 @@ _C.DATASETS.SOURCES = ('market1501')
 _C.DATASETS.ROOT_DIR = ('../data')
 _C.DATASETS.TARGETS = ('msmt17')
 _C.DATASETS.TRANSFORMS = ['random_flip', 'pad','random_crop', 'random_erase']
+# Protocol-3 only: merge every official source split for supervised training.
+# Target query/gallery loaders remain image-only and are never merged.
+_C.DATASETS.COMBINEALL = False
 
 # -----------------------------------------------------------------------------
 # DataLoader
