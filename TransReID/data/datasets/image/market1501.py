@@ -63,7 +63,7 @@ class Market1501(ImageDataset):
         super(Market1501, self).__init__(train, query, gallery, **kwargs)
 
     def process_dir(self, dir_path, relabel=False):
-        img_paths = glob.glob(osp.join(dir_path, '*.jpg'))
+        img_paths = sorted(glob.glob(osp.join(dir_path, '*.jpg')))
         pattern = re.compile(r'([-\d]+)_c(\d)')
 
         pid_container = set()
@@ -72,7 +72,9 @@ class Market1501(ImageDataset):
             if pid == -1:
                 continue # junk images are just ignored
             pid_container.add(pid)
-        pid2label = {pid: label for label, pid in enumerate(pid_container)}
+        pid2label = {
+            pid: label for label, pid in enumerate(sorted(pid_container))
+        }
 
         data = []
         for img_path in img_paths:

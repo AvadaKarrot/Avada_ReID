@@ -36,7 +36,9 @@ class CUHKSYSU(ImageDataset):
         super(CUHKSYSU, self).__init__(train, query, gallery, **kwargs)
 
     def process_dir(self, dirname):
-        img_paths = glob.glob(osp.join(dirname, '*.jpg'))
+        # Keep the merged multi-source PID labels and sample order identical
+        # across independent image-only and Caption processes.
+        img_paths = sorted(glob.glob(osp.join(dirname, '*.jpg')))
         # num_imgs = len(img_paths)
 
         # get all identities:
@@ -45,7 +47,9 @@ class CUHKSYSU(ImageDataset):
             img_name = osp.basename(img_path)
             pid = img_name.split('_')[0]
             pid_container.add(pid)
-        pid2label = {pid: label for label, pid in enumerate(pid_container)}
+        pid2label = {
+            pid: label for label, pid in enumerate(sorted(pid_container))
+        }
 
         # num_pids = len(pid_container)
 
