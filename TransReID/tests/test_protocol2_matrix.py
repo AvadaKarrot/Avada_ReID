@@ -84,7 +84,7 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
             self.assertEqual(current.SOLVER.BASE_LR, 0.000005)
             self.assertEqual(current.SOLVER.WARMUP_ITERS, 5)
-            self.assertEqual(current.SOLVER.STEPS, [15, 25])
+            self.assertEqual(tuple(current.SOLVER.STEPS), (15, 25))
             self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
             self.assertEqual(current.SOLVER.CHECKPOINT_PERIOD, 5)
 
