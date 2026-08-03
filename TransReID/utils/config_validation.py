@@ -17,6 +17,18 @@ def validate_training_config(current_cfg):
             raise ValueError(
                 "Caption training requires OBJECTIVE.CAPTION.WEIGHT > 0"
             )
+        feature_level = str(
+            getattr(
+                current_cfg.OBJECTIVE.CAPTION,
+                "FEATURE_LEVEL",
+                "global",
+            )
+        ).lower()
+        if feature_level != "global":
+            raise ValueError(
+                "OBJECTIVE.CAPTION.FEATURE_LEVEL must be 'global'; "
+                "token-level alignment is a separate experiment"
+            )
         positive_mode = str(
             getattr(
                 current_cfg.OBJECTIVE.CAPTION,

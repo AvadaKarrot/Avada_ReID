@@ -4,7 +4,14 @@ from types import SimpleNamespace
 from utils.config_validation import validate_training_config
 
 
-def make_cfg(*, legacy=False, enabled=False, file="", weight=0.0):
+def make_cfg(
+    *,
+    legacy=False,
+    enabled=False,
+    file="",
+    weight=0.0,
+    feature_level="global",
+):
     return SimpleNamespace(
         MODEL=SimpleNamespace(CAPTION=legacy),
         OBJECTIVE=SimpleNamespace(
@@ -12,6 +19,7 @@ def make_cfg(*, legacy=False, enabled=False, file="", weight=0.0):
                 ENABLED=enabled,
                 FILE=file,
                 WEIGHT=weight,
+                FEATURE_LEVEL=feature_level,
             )
         ),
     )
@@ -39,6 +47,17 @@ class TrainConfigTest(unittest.TestCase):
                 weight=0.5,
             )
         )
+
+    def test_token_level_alignment_is_a_separate_experiment(self):
+        with self.assertRaisesRegex(ValueError, "FEATURE_LEVEL"):
+            validate_training_config(
+                make_cfg(
+                    enabled=True,
+                    file="captions.jsonl",
+                    weight=0.1,
+                    feature_level="token",
+                )
+            )
 
 
 if __name__ == "__main__":

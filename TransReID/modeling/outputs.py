@@ -24,3 +24,4 @@ class ReIDOutput:
     patch_features: Optional[torch.Tensor] = None
     id_logits: Optional[Tuple[torch.Tensor, ...]] = None
     metric_features: Optional[Tuple[torch.Tensor, ...]] = None
+    alignment_feature: Optional[torch.Tensor] = None

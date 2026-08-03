@@ -44,6 +44,17 @@ def build_caption_objective(cfg, image_dim: int):
             f"{encoder_name!r}; expected 'clip_legacy'"
         )
 
+    feature_level = str(
+        _getattr_path(
+            cfg, "OBJECTIVE.CAPTION.FEATURE_LEVEL", "global"
+        )
+    ).lower()
+    if feature_level != "global":
+        raise ValueError(
+            "Only global CLIP CLS-to-EOT Caption alignment is currently "
+            "implemented; token-level alignment is a separate ablation"
+        )
+
     text_encoder = LegacyCLIPTextEncoder(
         cfg,
         trainable=bool(
@@ -66,5 +77,10 @@ def build_caption_objective(cfg, image_dim: int):
         ),
         positive_mode=str(
             _getattr_path(cfg, "OBJECTIVE.CAPTION.POSITIVE_MODE", "pid")
+        ),
+        use_projection=bool(
+            _getattr_path(
+                cfg, "OBJECTIVE.CAPTION.USE_PROJECTION", True
+            )
         ),
     )

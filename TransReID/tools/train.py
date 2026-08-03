@@ -69,7 +69,7 @@ def main():
     data_manager = build_datamanager(cfg)
     model = build_model(cfg, num_classes=data_manager._num_train_pids)
     caption_objective = build_caption_objective(
-        cfg, image_dim=model.head.embed_dim
+        cfg, image_dim=model.head.alignment_dim
     )
     objective = build_objective(
         cfg, caption_objective=caption_objective

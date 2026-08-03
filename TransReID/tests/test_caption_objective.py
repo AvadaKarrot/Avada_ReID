@@ -88,6 +88,38 @@ class CaptionObjectiveTest(unittest.TestCase):
         loss.backward()
         self.assertIsNotNone(images.grad)
 
+    def test_projection_free_alignment_preserves_native_clip_space(self):
+        objective = CaptionAlignmentObjective(
+            image_dim=2,
+            text_dim=2,
+            text_encoder=FakeTextEncoder(),
+            use_projection=False,
+        )
+        self.assertIsInstance(objective.image_projection, nn.Identity)
+        self.assertIsInstance(objective.text_projection, nn.Identity)
+        images = torch.tensor(
+            [[1.0, 1.0], [1.0, 1.0], [-1.0, 1.0]],
+            requires_grad=True,
+        )
+        loss = objective(
+            image_features=images,
+            captions=("one front", "one rear", "two"),
+            valid_mask=torch.ones(3, dtype=torch.bool),
+            pids=torch.tensor([1, 1, 2]),
+        )
+        loss.backward()
+        self.assertTrue(torch.isfinite(loss))
+        self.assertIsNotNone(images.grad)
+
+    def test_projection_free_alignment_rejects_dimension_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "equal image and text"):
+            CaptionAlignmentObjective(
+                image_dim=3,
+                text_dim=2,
+                text_encoder=FakeTextEncoder(),
+                use_projection=False,
+            )
+
     def test_legacy_clip_wrapper_retains_only_text_contract(self):
         clip_model = SimpleNamespace(
             token_embedding=nn.Embedding(16, 4),

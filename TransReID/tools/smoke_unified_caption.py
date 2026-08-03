@@ -43,7 +43,7 @@ def main():
     data_manager = build_datamanager(cfg)
     model = build_model(cfg, num_classes=data_manager._num_train_pids)
     caption_objective = build_caption_objective(
-        cfg, image_dim=model.head.embed_dim
+        cfg, image_dim=model.head.alignment_dim
     )
     objective = build_objective(
         cfg, caption_objective=caption_objective
@@ -91,6 +91,15 @@ def main():
             {
                 "source_batch": int(source_named["images"].shape[0]),
                 "caption_enabled": caption_enabled,
+                "head": type(model.head).__name__,
+                "metric_feature_dims": list(model.head.metric_dims),
+                "alignment_dim": int(model.head.alignment_dim),
+                "caption_feature_level": str(
+                    cfg.OBJECTIVE.CAPTION.FEATURE_LEVEL
+                ),
+                "caption_use_projection": bool(
+                    cfg.OBJECTIVE.CAPTION.USE_PROJECTION
+                ),
                 "source_caption_input": source_has_captions,
                 "caption_valid": (
                     int(source_named["caption_mask"].sum().item())

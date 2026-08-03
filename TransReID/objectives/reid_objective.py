@@ -59,8 +59,13 @@ class ReIDObjective(nn.Module):
         )
 
         if self.caption_objective is not None and self.caption_weight > 0:
+            alignment_feature = (
+                outputs.alignment_feature
+                if outputs.alignment_feature is not None
+                else outputs.raw_feature
+            )
             losses["caption"] = self.caption_objective(
-                image_features=outputs.raw_feature,
+                image_features=alignment_feature,
                 captions=batch.get("captions"),
                 valid_mask=batch.get("caption_mask"),
                 pids=pids,

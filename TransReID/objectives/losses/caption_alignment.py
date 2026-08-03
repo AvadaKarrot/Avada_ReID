@@ -21,11 +21,26 @@ class CaptionAlignmentObjective(nn.Module):
         projection_dim: int = 512,
         temperature: float = 0.07,
         positive_mode: str = "pid",
+        use_projection: bool = True,
     ):
         super().__init__()
         self.text_encoder = text_encoder
-        self.image_projection = nn.Linear(image_dim, projection_dim, bias=False)
-        self.text_projection = nn.Linear(text_dim, projection_dim, bias=False)
+        self.use_projection = bool(use_projection)
+        if self.use_projection:
+            self.image_projection = nn.Linear(
+                image_dim, projection_dim, bias=False
+            )
+            self.text_projection = nn.Linear(
+                text_dim, projection_dim, bias=False
+            )
+        else:
+            if image_dim != text_dim:
+                raise ValueError(
+                    "Projection-free alignment requires equal image and "
+                    "text dimensions"
+                )
+            self.image_projection = nn.Identity()
+            self.text_projection = nn.Identity()
         self.temperature = temperature
         if temperature <= 0:
             raise ValueError("temperature must be positive")

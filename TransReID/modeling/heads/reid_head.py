@@ -11,6 +11,8 @@ class ReIDHead(nn.Module):
         super().__init__()
         self.input_dim = input_dim
         self.embed_dim = embed_dim
+        self.alignment_dim = embed_dim
+        self.metric_dims = (embed_dim,)
         self.num_classes = num_classes
 
         self.projection = (
@@ -42,6 +44,7 @@ class ReIDHead(nn.Module):
             patch_features=backbone_output.patch_features,
             id_logits=(logits,) if logits is not None else None,
             metric_features=(raw_feature,),
+            alignment_feature=raw_feature,
         )
 
 
@@ -66,6 +69,8 @@ class CLIPReIDParityHead(nn.Module):
         self.input_dim = input_dim
         self.projected_dim = projected_dim
         self.embed_dim = input_dim
+        self.alignment_dim = projected_dim
+        self.metric_dims = (input_dim, input_dim, projected_dim)
         self.num_classes = num_classes
         self.neck_feature = neck_feature
 
@@ -134,4 +139,7 @@ class CLIPReIDParityHead(nn.Module):
                 raw_feature,
                 projected_feature,
             ),
+            # CLIP's projected image CLS and projected text EOT features share
+            # the native pretrained 512-D image-text embedding space.
+            alignment_feature=projected_feature,
         )

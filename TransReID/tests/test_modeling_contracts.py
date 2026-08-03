@@ -101,15 +101,47 @@ class ModelingContractTest(unittest.TestCase):
         model.train()
         outputs = model(images)
         self.assertEqual(outputs.embedding.shape, (4, 1280))
+        self.assertEqual(outputs.alignment_feature.shape, (4, 512))
         self.assertEqual(len(outputs.id_logits), 2)
         self.assertEqual(len(outputs.metric_features), 3)
 
-        objective = ReIDObjective(label_smoothing=0.1)
+        class CountingTriplet(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.dimensions = []
+
+            def forward(self, features, _):
+                self.dimensions.append(features.shape[1])
+                return features.sum() * 0.0
+
+        class RecordingCaptionObjective(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.image_dimension = None
+
+            def forward(self, image_features, **_):
+                self.image_dimension = image_features.shape[1]
+                return image_features.sum() * 0.0
+
+        caption_objective = RecordingCaptionObjective()
+        objective = ReIDObjective(
+            label_smoothing=0.1,
+            caption_objective=caption_objective,
+            caption_weight=0.1,
+        )
+        triplet = CountingTriplet()
+        objective.triplet = triplet
         losses = objective(
             outputs,
-            {"pids": torch.tensor([0, 0, 1, 1])},
+            {
+                "pids": torch.tensor([0, 0, 1, 1]),
+                "captions": ("a", "b", "c", "d"),
+                "caption_mask": torch.ones(4, dtype=torch.bool),
+            },
         )
         self.assertTrue(torch.isfinite(losses["total"]))
+        self.assertEqual(triplet.dimensions, [768, 768, 512])
+        self.assertEqual(caption_objective.image_dimension, 512)
 
         model.eval()
         with torch.no_grad():
