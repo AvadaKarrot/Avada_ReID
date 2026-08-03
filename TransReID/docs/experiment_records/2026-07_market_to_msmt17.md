@@ -141,6 +141,30 @@ The next controlled experiment may add Caption supervision to this parity
 model while leaving its data, visual branches, ReID losses, optimizer, schedule
 and image-only target evaluation unchanged.
 
+## Controlled Caption alignment A (implementation and smoke, 2026-08-03)
+
+Commit `5666638e35e37c4222ff9568d9966d0a63f8e078` adds the first fair
+Caption ablation on top of the passed image-only parity model.
+
+- Config:
+  `configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml`.
+- Visual ReID objective remains two ID losses plus three triplet losses over
+  feature dimensions 768, 768 and 512.
+- The only added training term is a symmetric PID-aware alignment loss between
+  the native projected CLIP visual CLS feature (512-D) and the frozen CLIP text
+  EOT feature (512-D).
+- No newly initialized image or text projection layer is used.
+- Prompt V2.4 selection is fixed to the first comprehensive Caption, avoiding
+  an extra dataset-worker random draw relative to the image-only control.
+- Target MSMT17 evaluation remains strictly image-only with the same 1,280-D
+  concatenated embedding.
+
+The real-data GPU smoke test passed with Market Caption coverage 12,936/12,936.
+Its source batch contained 16 valid Captions; losses were ID 13.2436, triplet
+8.4629, Caption 1.1639 and weighted total 21.8229. The target batch contained
+no Caption and produced a `[32, 1280]` embedding. This validates the execution
+contract only; no 60-epoch result has been produced yet.
+
 ## Caption corpus state before Protocol-3 extension
 
 Prompt V2.4 clean files passed JSON/empty/duplicate checks:
