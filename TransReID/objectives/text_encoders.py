@@ -22,8 +22,9 @@ class LegacyCLIPTextEncoder(nn.Module):
         cfg=None,
         *,
         clip_model=None,
-        tokenizer: Callable[[Sequence[str]], torch.Tensor] | None = None,
+        tokenizer: Callable[..., torch.Tensor] | None = None,
         trainable: bool = False,
+        truncate: bool = True,
     ):
         super().__init__()
         if clip_model is None:
@@ -54,6 +55,7 @@ class LegacyCLIPTextEncoder(nn.Module):
         self.ln_final = clip_model.ln_final
         self.text_projection = clip_model.text_projection
         self.tokenizer = tokenizer
+        self.truncate = bool(truncate)
         self.output_dim = int(self.text_projection.shape[-1])
         self._trainable = bool(trainable)
 
@@ -69,7 +71,9 @@ class LegacyCLIPTextEncoder(nn.Module):
         return super().train(mode if self._trainable else False)
 
     def forward(self, captions: Sequence[str]) -> torch.Tensor:
-        tokens = self.tokenizer(list(captions)).to(
+        tokens = self.tokenizer(
+            list(captions), truncate=self.truncate
+        ).to(
             self.token_embedding.weight.device
         )
         x = self.token_embedding(tokens).to(self.dtype)

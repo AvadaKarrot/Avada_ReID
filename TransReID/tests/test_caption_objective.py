@@ -129,7 +129,12 @@ class CaptionObjectiveTest(unittest.TestCase):
             text_projection=nn.Parameter(torch.randn(4, 2)),
         )
 
-        def tokenizer(captions):
+        tokenizer_calls = []
+
+        def tokenizer(captions, *, truncate=False):
+            tokenizer_calls.append(
+                {"captions": list(captions), "truncate": truncate}
+            )
             return torch.tensor([[1, 2, 9] for _ in captions])
 
         encoder = LegacyCLIPTextEncoder(
@@ -139,6 +144,15 @@ class CaptionObjectiveTest(unittest.TestCase):
         )
         output = encoder(["a person", "another person"])
         self.assertEqual(output.shape, (2, 2))
+        self.assertEqual(
+            tokenizer_calls,
+            [
+                {
+                    "captions": ["a person", "another person"],
+                    "truncate": True,
+                }
+            ],
+        )
         self.assertEqual(encoder.output_dim, 2)
         self.assertTrue(
             all(not parameter.requires_grad for parameter in encoder.parameters())
