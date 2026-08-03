@@ -29,16 +29,28 @@ class ReIDObjective(nn.Module):
 
     def forward(self, outputs, batch) -> Dict[str, torch.Tensor]:
         pids = batch["pids"].to(outputs.raw_feature.device)
-        if outputs.logits is None:
+        id_logits = outputs.id_logits
+        if id_logits is None and outputs.logits is not None:
+            id_logits = (outputs.logits,)
+        if not id_logits:
             raise RuntimeError("ReIDObjective requires model.train() logits")
 
-        losses = {
-            "id": F.cross_entropy(
-                outputs.logits,
+        metric_features = outputs.metric_features or (outputs.raw_feature,)
+        id_losses = [
+            F.cross_entropy(
+                logits,
                 pids,
                 label_smoothing=self.label_smoothing,
-            ),
-            "triplet": self.triplet(outputs.raw_feature, pids),
+            )
+            for logits in id_logits
+        ]
+        triplet_losses = [
+            self.triplet(features, pids) for features in metric_features
+        ]
+
+        losses = {
+            "id": sum(id_losses),
+            "triplet": sum(triplet_losses),
         }
 
         total = (

@@ -1,5 +1,5 @@
 from .backbones import build_backbone
-from .heads import ReIDHead
+from .heads import CLIPReIDParityHead, ReIDHead
 from .reid_model import ReIDModel
 
 
@@ -25,16 +25,38 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
         }
         backbone_name = aliases.get(legacy_name, legacy_name)
 
+    head_type = str(
+        _getattr_path(cfg, "MODEL.HEAD.TYPE", "standard")
+    ).lower()
+    if head_type == "clipreid_parity":
+        if backbone_name != "clip_vit_b16":
+            raise ValueError(
+                "clipreid_parity head requires the clip_vit_b16 backbone"
+            )
+        # Legacy CLIP-ReID initializes its two classifiers and BNNecks before
+        # constructing CLIP. Matching that order also matches seeded sampling.
+        head = CLIPReIDParityHead(
+            input_dim=768,
+            projected_dim=512,
+            num_classes=num_classes,
+            neck_feature=str(_getattr_path(cfg, "TEST.NECK_FEAT", "before")),
+        )
+    elif head_type != "standard":
+        raise ValueError(f"Unsupported ReID head: {head_type}")
+    else:
+        head = None
+
     kwargs = {"cfg": cfg} if backbone_name == "clip_vit_b16" else {}
     model_name = _getattr_path(cfg, "MODEL.BACKBONE.PRETRAINED_NAME")
     if model_name and backbone_name != "clip_vit_b16":
         kwargs["model_name"] = model_name
 
     backbone = build_backbone(backbone_name, **kwargs)
-    embed_dim = int(_getattr_path(cfg, "MODEL.HEAD.EMBED_DIM", 768))
-    head = ReIDHead(
-        input_dim=backbone.output_dim,
-        embed_dim=embed_dim,
-        num_classes=num_classes,
-    )
+    if head is None:
+        embed_dim = int(_getattr_path(cfg, "MODEL.HEAD.EMBED_DIM", 768))
+        head = ReIDHead(
+            input_dim=backbone.output_dim,
+            embed_dim=embed_dim,
+            num_classes=num_classes,
+        )
     return ReIDModel(backbone=backbone, head=head)

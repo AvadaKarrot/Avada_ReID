@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Mapping, Optional, Tuple
 
 import torch
 
@@ -11,6 +11,7 @@ class BackboneOutput:
     global_feature: torch.Tensor
     patch_features: Optional[torch.Tensor] = None
     spatial_shape: Optional[Tuple[int, int]] = None
+    auxiliary_features: Optional[Mapping[str, torch.Tensor]] = None
 
 
 @dataclass
@@ -21,3 +22,5 @@ class ReIDOutput:
     raw_feature: torch.Tensor
     logits: Optional[torch.Tensor] = None
     patch_features: Optional[torch.Tensor] = None
+    id_logits: Optional[Tuple[torch.Tensor, ...]] = None
+    metric_features: Optional[Tuple[torch.Tensor, ...]] = None

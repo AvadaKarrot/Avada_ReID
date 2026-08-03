@@ -40,13 +40,13 @@ class CLIPViTB16Adapter(BackboneAdapter):
 
     def forward_features(self, images: torch.Tensor) -> BackboneOutput:
         outputs = self.encoder(images)
-        if not isinstance(outputs, (tuple, list)) or len(outputs) < 2:
+        if not isinstance(outputs, (tuple, list)) or len(outputs) < 3:
             raise RuntimeError(
                 "The repository CLIP visual encoder must return token features"
             )
 
         # Legacy CLIP returns (last_tokens, tokens, projected_tokens).
-        tokens = outputs[1]
+        last_tokens, tokens, projected_tokens = outputs[:3]
         if tokens.ndim != 3:
             raise RuntimeError(f"Expected [B, N, D] CLIP tokens, got {tokens.shape}")
 
@@ -56,4 +56,8 @@ class CLIPViTB16Adapter(BackboneAdapter):
             global_feature=tokens[:, 0],
             patch_features=tokens[:, 1:],
             spatial_shape=(height, width),
+            auxiliary_features={
+                "last_global": last_tokens[:, 0],
+                "projected_global": projected_tokens[:, 0],
+            },
         )

@@ -1,14 +1,23 @@
 MODEL:
+  DEVICE: "cuda"
+  DEVICE_ID: "'0'"
   NAME: "ViT-B-16"
+  PRETRAIN_PATH: "/root/autodl-tmp/pretrained/clip/ViT-B-16.pt"
+  STRIDE_SIZE: [16, 16]
+  ID_LOSS_WEIGHT: 1.0
+  TRIPLET_LOSS_WEIGHT: 1.0
+  SIE_CAMERA: False
+  SIE_VIEW: False
   BACKBONE:
     NAME: "clip_vit_b16"
     PRETRAINED: True
   HEAD:
+    TYPE: "clipreid_parity"
     EMBED_DIM: 768
   CAPTION: False
 
 OBJECTIVE:
-  LABEL_SMOOTHING: 0.0
+  LABEL_SMOOTHING: 0.1
   CAPTION:
     ENABLED: False
     WEIGHT: 0.0
@@ -17,12 +26,18 @@ INPUT:
   PERSON_REID: True
   SIZE_TRAIN: [256, 128]
   SIZE_TEST: [256, 128]
+  PROB: 0.5
+  RE_PROB: 0.5
+  PADDING: 10
   PIXEL_MEAN: [0.5, 0.5, 0.5]
   PIXEL_STD: [0.5, 0.5, 0.5]
 
 DATASETS:
   SOURCES: "market1501"
   TARGETS: "msmt17"
+  ROOT_DIR: "/root/autodl-tmp/datasets"
+  TRANSFORMS:
+    ["random_flip", "pad", "random_crop", "random_erase", "color_jitter"]
 
 DATALOADER:
   SAMPLER: "RandomIdentitySampler"
@@ -33,7 +48,16 @@ SOLVER:
   IMS_PER_BATCH: 64
   OPTIMIZER_NAME: "Adam"
   MAX_EPOCHS: 60
-  BASE_LR: 0.000001
+  BASE_LR: 0.000005
+  WARMUP_METHOD: "linear"
+  WARMUP_ITERS: 10
+  WARMUP_FACTOR: 0.1
+  WEIGHT_DECAY: 0.0001
+  WEIGHT_DECAY_BIAS: 0.0001
+  LARGE_FC_LR: False
+  BIAS_LR_FACTOR: 2
+  STEPS: [30, 50]
+  GAMMA: 0.1
   CHECKPOINT_PERIOD: 10
   EVAL_PERIOD: 10
   LOG_PERIOD: 100
@@ -44,3 +68,6 @@ SOLVER:
 TEST:
   IMS_PER_BATCH: 128
   FEAT_NORM: "yes"
+  NECK_FEAT: "before"
+
+OUTPUT_DIR: "/root/autodl-tmp/experiments/unified_clipreid_parity/market_to_msmt17/seed_1234"

@@ -101,6 +101,7 @@ _C.MODEL.BACKBONE.PRETRAINED = True
 _C.MODEL.BACKBONE.PRETRAINED_NAME = ''
 
 _C.MODEL.HEAD = CN()
+_C.MODEL.HEAD.TYPE = 'standard'
 _C.MODEL.HEAD.EMBED_DIM = 768
 
 # Training objectives are independent from the image-only model.

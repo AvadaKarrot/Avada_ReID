@@ -1,3 +1,3 @@
-from .reid_head import ReIDHead
+from .reid_head import CLIPReIDParityHead, ReIDHead
 
-__all__ = ["ReIDHead"]
+__all__ = ["CLIPReIDParityHead", "ReIDHead"]

@@ -6,7 +6,8 @@ from torch import nn
 
 from modeling.backbones.dinov3 import DINOv3Adapter
 from modeling.backbones.siglip2 import SigLIP2Adapter
-from modeling.heads import ReIDHead
+from modeling.heads import CLIPReIDParityHead, ReIDHead
+from modeling.outputs import BackboneOutput
 from modeling.reid_model import ReIDModel
 from objectives import ReIDObjective
 
@@ -78,6 +79,44 @@ class ModelingContractTest(unittest.TestCase):
             inference_outputs = model(images)
         self.assertIsNone(inference_outputs.logits)
         self.assertEqual(inference_outputs.embedding.shape, (4, 16))
+
+    def test_clipreid_parity_head_preserves_legacy_branches(self):
+        class FakeCLIPBackbone(nn.Module):
+            def forward_features(self, images):
+                batch = images.shape[0]
+                primary = torch.randn(batch, 768)
+                return BackboneOutput(
+                    global_feature=primary,
+                    auxiliary_features={
+                        "last_global": torch.randn(batch, 768),
+                        "projected_global": torch.randn(batch, 512),
+                    },
+                )
+
+        model = ReIDModel(
+            FakeCLIPBackbone(),
+            CLIPReIDParityHead(768, 512, num_classes=2),
+        )
+        images = torch.randn(4, 3, 32, 16)
+        model.train()
+        outputs = model(images)
+        self.assertEqual(outputs.embedding.shape, (4, 1280))
+        self.assertEqual(len(outputs.id_logits), 2)
+        self.assertEqual(len(outputs.metric_features), 3)
+
+        objective = ReIDObjective(label_smoothing=0.1)
+        losses = objective(
+            outputs,
+            {"pids": torch.tensor([0, 0, 1, 1])},
+        )
+        self.assertTrue(torch.isfinite(losses["total"]))
+
+        model.eval()
+        with torch.no_grad():
+            inference_outputs = model(images)
+        self.assertIsNone(inference_outputs.logits)
+        self.assertIsNone(inference_outputs.id_logits)
+        self.assertEqual(inference_outputs.embedding.shape, (4, 1280))
 
 
 if __name__ == "__main__":

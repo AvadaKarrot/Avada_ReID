@@ -2,7 +2,6 @@ from collections import OrderedDict
 from typing import Mapping
 
 import torch
-from torch.nn import functional as F
 
 from .batch import normalize_batch
 
@@ -34,10 +33,9 @@ class Evaluator:
             batch = normalize_batch(raw_batch)
             images = batch["images"].to(self.device)
             outputs = model(images)
-            embeddings = F.normalize(outputs.embedding, dim=1)
             metric.update(
                 (
-                    embeddings,
+                    outputs.embedding,
                     batch["pids"],
                     batch["camids"],
                 )
