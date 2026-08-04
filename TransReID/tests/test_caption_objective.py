@@ -5,6 +5,7 @@ import torch
 from torch import nn
 
 from objectives.losses.caption_alignment import CaptionAlignmentObjective
+from objectives.reid_objective import ReIDObjective
 from objectives.text_encoders import LegacyCLIPTextEncoder, SigLIP2TextEncoder
 
 
@@ -24,6 +25,56 @@ class FakeTextEncoder(nn.Module):
 
 
 class CaptionObjectiveTest(unittest.TestCase):
+    @staticmethod
+    def _objective_with_text_encoder(*, frozen):
+        text_encoder = FakeTextEncoder()
+        text_encoder.requires_grad_(not frozen)
+        caption_objective = CaptionAlignmentObjective(
+            image_dim=2,
+            text_dim=2,
+            text_encoder=text_encoder,
+            projection_dim=2,
+        )
+        return ReIDObjective(
+            caption_objective=caption_objective,
+            caption_weight=1.0,
+        )
+
+    def test_checkpoint_omits_only_frozen_text_tower(self):
+        objective = self._objective_with_text_encoder(frozen=True)
+        state = objective.state_dict()
+        self.assertFalse(
+            any(
+                key.startswith("caption_objective.text_encoder.")
+                for key in state
+            )
+        )
+        self.assertIn("caption_objective.image_projection.weight", state)
+        self.assertIn("caption_objective.text_projection.weight", state)
+
+        restored = self._objective_with_text_encoder(frozen=True)
+        restored.load_state_dict(state, strict=True)
+        self.assertTrue(
+            torch.equal(
+                restored.caption_objective.image_projection.weight,
+                state["caption_objective.image_projection.weight"],
+            )
+        )
+
+    def test_checkpoint_keeps_trainable_text_tower(self):
+        objective = self._objective_with_text_encoder(frozen=False)
+        self.assertIn(
+            "caption_objective.text_encoder.anchor",
+            objective.state_dict(),
+        )
+
+    def test_compact_checkpoint_still_rejects_other_missing_keys(self):
+        objective = self._objective_with_text_encoder(frozen=True)
+        state = objective.state_dict()
+        del state["caption_objective.image_projection.weight"]
+        with self.assertRaisesRegex(RuntimeError, "image_projection"):
+            objective.load_state_dict(state, strict=True)
+
     def test_same_pid_pairs_are_all_positives(self):
         logits = torch.tensor(
             [

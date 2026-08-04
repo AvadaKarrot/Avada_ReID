@@ -50,6 +50,35 @@ class CaptionAlignmentObjective(nn.Module):
                 "positive_mode must be either 'pid' or 'instance'"
             )
 
+    def frozen_text_encoder_state_is_reconstructible(self) -> bool:
+        """Return whether text weights may be restored from pretrained files.
+
+        Frozen text towers are immutable inputs to the alignment objective and
+        are loaded before a training checkpoint is restored.  Persisting them
+        in every checkpoint only duplicates the pretrained model.  A future
+        trainable text tower is deliberately kept in the checkpoint.
+        """
+
+        if not isinstance(self.text_encoder, nn.Module):
+            return False
+        parameters = tuple(self.text_encoder.parameters())
+        return bool(parameters) and all(
+            not parameter.requires_grad for parameter in parameters
+        )
+
+    def state_dict(self, destination=None, prefix="", keep_vars=False):
+        state = super().state_dict(
+            destination=destination,
+            prefix=prefix,
+            keep_vars=keep_vars,
+        )
+        if self.frozen_text_encoder_state_is_reconstructible():
+            text_prefix = f"{prefix}text_encoder."
+            for key in tuple(state):
+                if key.startswith(text_prefix):
+                    del state[key]
+        return state
+
     @staticmethod
     def _positive_mask(
         pids: torch.Tensor,
