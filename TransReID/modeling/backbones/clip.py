@@ -56,6 +56,8 @@ class CLIPViTB16Adapter(BackboneAdapter):
             global_feature=tokens[:, 0],
             patch_features=tokens[:, 1:],
             spatial_shape=(height, width),
+            pre_norm_global=last_tokens[:, 0],
+            secondary_global=projected_tokens[:, 0],
             auxiliary_features={
                 "last_global": last_tokens[:, 0],
                 "projected_global": projected_tokens[:, 0],

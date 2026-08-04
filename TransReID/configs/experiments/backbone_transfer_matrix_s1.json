@@ -1,0 +1,162 @@
+{
+  "protocol": "one-source-one-target",
+  "schedule": "S1_30ep_eval5",
+  "combineall": false,
+  "smoke_output_root": "/root/autodl-tmp/experiments/backbone_transfer_s1/smoke",
+  "solver_overrides": {
+    "MAX_EPOCHS": 30,
+    "BASE_LR": 0.000005,
+    "WARMUP_ITERS": 5,
+    "WARMUP_FACTOR": 0.1,
+    "STEPS": [5, 20],
+    "GAMMA": 0.1,
+    "EVAL_PERIOD": 5,
+    "CHECKPOINT_PERIOD": 5
+  },
+  "runs": [
+    {
+      "name": "clip_ms_to_m_s1",
+      "backbone": "clip",
+      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "source": "msmt17",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/clip/ms_to_m/seed_1234"
+    },
+    {
+      "name": "dinov3_ms_to_m_s1",
+      "backbone": "dinov3",
+      "base_config": "configs/experiments/dinov3_multibranch_image_only.yml",
+      "source": "msmt17",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/dinov3/ms_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_ms_to_m_s1",
+      "backbone": "siglip2",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "msmt17",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2/ms_to_m/seed_1234"
+    },
+    {
+      "name": "clip_m_to_ms_s1",
+      "backbone": "clip",
+      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "source": "market1501",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/clip/m_to_ms/seed_1234"
+    },
+    {
+      "name": "dinov3_m_to_ms_s1",
+      "backbone": "dinov3",
+      "base_config": "configs/experiments/dinov3_multibranch_image_only.yml",
+      "source": "market1501",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/dinov3/m_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_m_to_ms_s1",
+      "backbone": "siglip2",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "market1501",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2/m_to_ms/seed_1234"
+    },
+    {
+      "name": "clip_ms_to_c3_s1",
+      "backbone": "clip",
+      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "source": "msmt17",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/clip/ms_to_c3/seed_1234"
+    },
+    {
+      "name": "dinov3_ms_to_c3_s1",
+      "backbone": "dinov3",
+      "base_config": "configs/experiments/dinov3_multibranch_image_only.yml",
+      "source": "msmt17",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/dinov3/ms_to_c3/seed_1234"
+    },
+    {
+      "name": "siglip2_ms_to_c3_s1",
+      "backbone": "siglip2",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "msmt17",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2/ms_to_c3/seed_1234"
+    },
+    {
+      "name": "clip_c3_to_ms_s1",
+      "backbone": "clip",
+      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "source": "cuhk03",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/clip/c3_to_ms/seed_1234"
+    },
+    {
+      "name": "dinov3_c3_to_ms_s1",
+      "backbone": "dinov3",
+      "base_config": "configs/experiments/dinov3_multibranch_image_only.yml",
+      "source": "cuhk03",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/dinov3/c3_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_c3_to_ms_s1",
+      "backbone": "siglip2",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "cuhk03",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2/c3_to_ms/seed_1234"
+    },
+    {
+      "name": "clip_c3_to_m_s1",
+      "backbone": "clip",
+      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "source": "cuhk03",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/clip/c3_to_m/seed_1234"
+    },
+    {
+      "name": "dinov3_c3_to_m_s1",
+      "backbone": "dinov3",
+      "base_config": "configs/experiments/dinov3_multibranch_image_only.yml",
+      "source": "cuhk03",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/dinov3/c3_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_c3_to_m_s1",
+      "backbone": "siglip2",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "cuhk03",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2/c3_to_m/seed_1234"
+    },
+    {
+      "name": "clip_m_to_c3_s1",
+      "backbone": "clip",
+      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "source": "market1501",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/clip/m_to_c3/seed_1234"
+    },
+    {
+      "name": "dinov3_m_to_c3_s1",
+      "backbone": "dinov3",
+      "base_config": "configs/experiments/dinov3_multibranch_image_only.yml",
+      "source": "market1501",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/dinov3/m_to_c3/seed_1234"
+    },
+    {
+      "name": "siglip2_m_to_c3_s1",
+      "backbone": "siglip2",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "market1501",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2/m_to_c3/seed_1234"
+    }
+  ]
+}

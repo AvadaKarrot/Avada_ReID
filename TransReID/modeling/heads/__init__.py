@@ -1,3 +1,3 @@
-from .reid_head import CLIPReIDParityHead, ReIDHead
+from .reid_head import CLIPReIDParityHead, MultiBranchParityHead, ReIDHead
 
-__all__ = ["CLIPReIDParityHead", "ReIDHead"]
+__all__ = ["CLIPReIDParityHead", "MultiBranchParityHead", "ReIDHead"]

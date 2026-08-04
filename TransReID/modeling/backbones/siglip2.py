@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from ..outputs import BackboneOutput
 from .base import BackboneAdapter
@@ -13,6 +14,7 @@ class SigLIP2Adapter(BackboneAdapter):
     """SigLIP2 visual-tower adapter with no text dependency at inference."""
 
     output_dim = 768
+    secondary_dim = 768
 
     def __init__(
         self,
@@ -22,34 +24,80 @@ class SigLIP2Adapter(BackboneAdapter):
         super().__init__()
         if encoder is None:
             try:
-                from transformers import AutoModel
+                from transformers import Siglip2VisionModel
             except ImportError as exc:
                 raise ImportError(
                     "SigLIP2 requires transformers. Install the project environment "
                     "before constructing this backbone."
                 ) from exc
-            full_model = AutoModel.from_pretrained(model_name)
-            encoder = getattr(full_model, "vision_model", full_model)
+            encoder = Siglip2VisionModel.from_pretrained(model_name)
 
         self.encoder = encoder
         self.patch_size = int(getattr(encoder.config, "patch_size", 16))
         self.output_dim = int(getattr(encoder.config, "hidden_size", self.output_dim))
+        self.secondary_dim = self.output_dim
+
+    def _patchify(self, images: torch.Tensor):
+        if images.ndim != 4:
+            raise ValueError(
+                f"Expected SigLIP2 images shaped [B, C, H, W], got {images.shape}"
+            )
+        batch, _, height, width = images.shape
+        if height % self.patch_size or width % self.patch_size:
+            raise ValueError(
+                "SigLIP2 image height and width must be divisible by patch_size: "
+                f"got {(height, width)} and patch_size={self.patch_size}"
+            )
+        patches = F.unfold(
+            images,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
+        ).transpose(1, 2)
+        spatial_shape = (height // self.patch_size, width // self.patch_size)
+        spatial_shapes = torch.tensor(
+            [spatial_shape] * batch,
+            dtype=torch.long,
+            device=images.device,
+        )
+        pixel_attention_mask = torch.ones(
+            (batch, patches.shape[1]),
+            dtype=torch.bool,
+            device=images.device,
+        )
+        return patches, pixel_attention_mask, spatial_shapes, spatial_shape
 
     def forward_features(self, images: torch.Tensor) -> BackboneOutput:
-        outputs = self.encoder(
-            pixel_values=images,
-            interpolate_pos_encoding=True,
-            return_dict=True,
+        patches, attention_mask, spatial_shapes, spatial_shape = self._patchify(
+            images
         )
+
+        pre_norm = []
+        post_layernorm = getattr(self.encoder, "post_layernorm", None)
+        hook = None
+        if post_layernorm is not None:
+            hook = post_layernorm.register_forward_pre_hook(
+                lambda _module, inputs: pre_norm.append(inputs[0])
+            )
+        try:
+            outputs = self.encoder(
+                pixel_values=patches,
+                pixel_attention_mask=attention_mask,
+                spatial_shapes=spatial_shapes,
+                return_dict=True,
+            )
+        finally:
+            if hook is not None:
+                hook.remove()
         tokens = outputs.last_hidden_state
         pooled = getattr(outputs, "pooler_output", None)
         if pooled is None:
             pooled = tokens.mean(dim=1)
+        pre_norm_tokens = pre_norm[0] if pre_norm else tokens
 
-        height = images.shape[-2] // self.patch_size
-        width = images.shape[-1] // self.patch_size
         return BackboneOutput(
-            global_feature=pooled,
+            global_feature=tokens.mean(dim=1),
             patch_features=tokens,
-            spatial_shape=(height, width),
+            spatial_shape=spatial_shape,
+            pre_norm_global=pre_norm_tokens.mean(dim=1),
+            secondary_global=pooled,
         )

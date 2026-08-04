@@ -13,6 +13,7 @@ class DINOv3Adapter(BackboneAdapter):
     """Image-only DINOv3 adapter that excludes register tokens locally."""
 
     output_dim = 768
+    secondary_dim = 768
 
     def __init__(
         self,
@@ -39,14 +40,22 @@ class DINOv3Adapter(BackboneAdapter):
         )
         self.patch_size = int(getattr(encoder.config, "patch_size", 16))
         self.output_dim = int(getattr(encoder.config, "hidden_size", self.output_dim))
+        self.secondary_dim = self.output_dim
 
     def forward_features(self, images: torch.Tensor) -> BackboneOutput:
         outputs = self.encoder(
             pixel_values=images,
-            interpolate_pos_encoding=True,
+            output_hidden_states=True,
             return_dict=True,
         )
         tokens = outputs.last_hidden_state
+        hidden_states = getattr(outputs, "hidden_states", None)
+        if not hidden_states:
+            raise RuntimeError(
+                "DINOv3 must return pre-normalization hidden states for the "
+                "multi-branch ReID contract"
+            )
+        pre_norm_tokens = hidden_states[-1]
         patch_start = 1 + self.register_tokens
 
         height = images.shape[-2] // self.patch_size
@@ -63,4 +72,6 @@ class DINOv3Adapter(BackboneAdapter):
             global_feature=tokens[:, 0],
             patch_features=patch_features,
             spatial_shape=(height, width),
+            pre_norm_global=pre_norm_tokens[:, 0],
+            secondary_global=patch_features.mean(dim=1),
         )

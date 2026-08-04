@@ -3,12 +3,19 @@
 
 def validate_training_config(current_cfg):
     caption_enabled = bool(current_cfg.OBJECTIVE.CAPTION.ENABLED)
+    model_head = getattr(current_cfg.MODEL, "HEAD", None)
+    head_type = str(getattr(model_head, "TYPE", "standard")).lower()
     if current_cfg.MODEL.CAPTION:
         raise ValueError(
             "MODEL.CAPTION belongs to the legacy model-fusion path. "
             "Use OBJECTIVE.CAPTION.ENABLED for source-only supervision."
         )
     if caption_enabled:
+        if head_type == "multibranch_parity":
+            raise ValueError(
+                "multibranch_parity is currently image-only. Its 512-D ReID "
+                "projection is not a pretrained image-text alignment space."
+            )
         if not current_cfg.OBJECTIVE.CAPTION.FILE:
             raise ValueError(
                 "Caption training requires OBJECTIVE.CAPTION.FILE"

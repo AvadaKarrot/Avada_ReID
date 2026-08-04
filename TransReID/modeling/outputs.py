@@ -11,6 +11,13 @@ class BackboneOutput:
     global_feature: torch.Tensor
     patch_features: Optional[torch.Tensor] = None
     spatial_shape: Optional[Tuple[int, int]] = None
+    # Global representation before the backbone's final normalization.  This
+    # is the first metric branch in the verified CLIP-ReID recipe.
+    pre_norm_global: Optional[torch.Tensor] = None
+    # A complementary native global representation.  CLIP supplies its
+    # pretrained visual projection, DINOv3 uses mean patch features, and
+    # SigLIP2 uses its pretrained attention pooler.
+    secondary_global: Optional[torch.Tensor] = None
     auxiliary_features: Optional[Mapping[str, torch.Tensor]] = None
 
 

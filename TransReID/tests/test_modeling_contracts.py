@@ -6,7 +6,11 @@ from torch import nn
 
 from modeling.backbones.dinov3 import DINOv3Adapter
 from modeling.backbones.siglip2 import SigLIP2Adapter
-from modeling.heads import CLIPReIDParityHead, ReIDHead
+from modeling.heads import (
+    CLIPReIDParityHead,
+    MultiBranchParityHead,
+    ReIDHead,
+)
 from modeling.outputs import BackboneOutput
 from modeling.reid_model import ReIDModel
 from objectives import ReIDObjective
@@ -19,9 +23,11 @@ class FakeEncoder(nn.Module):
         self.pool = pool
         self.config = SimpleNamespace(patch_size=16, hidden_size=hidden_size)
         self.anchor = nn.Parameter(torch.zeros(1))
+        self.last_pixel_values_shape = None
 
     def forward(self, pixel_values, **_):
         batch = pixel_values.shape[0]
+        self.last_pixel_values_shape = tuple(pixel_values.shape)
         tokens = torch.randn(
             batch,
             self.token_count,
@@ -31,6 +37,7 @@ class FakeEncoder(nn.Module):
         return SimpleNamespace(
             last_hidden_state=tokens,
             pooler_output=tokens.mean(dim=1) if self.pool else None,
+            hidden_states=(tokens - 1.0,),
         )
 
 
@@ -46,15 +53,60 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(output.global_feature.shape, (2, 32))
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
         self.assertEqual(output.spatial_shape, (2, 1))
+        self.assertEqual(output.pre_norm_global.shape, (2, 32))
+        self.assertEqual(output.secondary_global.shape, (2, 32))
 
     def test_siglip2_adapter_is_image_only(self):
         images = torch.randn(2, 3, 32, 16)
-        adapter = SigLIP2Adapter(
-            encoder=FakeEncoder(token_count=2, pool=True)
-        )
+        encoder = FakeEncoder(token_count=2, pool=True)
+        adapter = SigLIP2Adapter(encoder=encoder)
         output = adapter.forward_features(images)
         self.assertEqual(output.global_feature.shape, (2, 32))
         self.assertEqual(output.spatial_shape, (2, 1))
+        self.assertEqual(encoder.last_pixel_values_shape, (2, 2, 768))
+        self.assertEqual(output.pre_norm_global.shape, (2, 32))
+        self.assertEqual(output.secondary_global.shape, (2, 32))
+
+    def test_siglip2_adapter_matches_transformers_patchified_contract(self):
+        try:
+            from transformers import Siglip2VisionConfig, Siglip2VisionModel
+        except ImportError:
+            self.skipTest("installed transformers has no SigLIP2")
+        config = Siglip2VisionConfig(
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            patch_size=16,
+            num_patches=196,
+        )
+        adapter = SigLIP2Adapter(encoder=Siglip2VisionModel(config))
+        output = adapter(torch.randn(2, 3, 32, 16))
+        self.assertEqual(output.patch_features.shape, (2, 2, 32))
+        self.assertEqual(output.pre_norm_global.shape, (2, 32))
+        self.assertEqual(output.secondary_global.shape, (2, 32))
+
+    def test_multibranch_parity_head_matches_clip_loss_contract(self):
+        backbone_output = BackboneOutput(
+            global_feature=torch.randn(4, 32),
+            patch_features=torch.randn(4, 2, 32),
+            pre_norm_global=torch.randn(4, 32),
+            secondary_global=torch.randn(4, 32),
+        )
+        head = MultiBranchParityHead(
+            input_dim=32,
+            secondary_dim=32,
+            projected_dim=16,
+            num_classes=2,
+        )
+        head.train()
+        outputs = head(backbone_output)
+        self.assertEqual(outputs.embedding.shape, (4, 48))
+        self.assertEqual(len(outputs.id_logits), 2)
+        self.assertEqual(
+            [feature.shape[1] for feature in outputs.metric_features],
+            [32, 32, 16],
+        )
 
     def test_reid_model_and_objective_contract(self):
         images = torch.randn(4, 3, 32, 16)
