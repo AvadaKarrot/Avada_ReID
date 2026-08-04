@@ -63,7 +63,7 @@ class ModelingContractTest(unittest.TestCase):
         output = adapter.forward_features(images)
         self.assertEqual(output.global_feature.shape, (2, 32))
         self.assertEqual(output.spatial_shape, (2, 1))
-        self.assertEqual(encoder.last_pixel_values_shape, (2, 2, 768))
+        self.assertEqual(encoder.last_pixel_values_shape, (2, 3, 32, 16))
         self.assertEqual(output.pre_norm_global.shape, (2, 32))
         self.assertEqual(output.secondary_global.shape, (2, 32))
         self.assertEqual(
@@ -71,20 +71,20 @@ class ModelingContractTest(unittest.TestCase):
             (2, 32),
         )
 
-    def test_siglip2_adapter_matches_transformers_patchified_contract(self):
+    def test_siglip2_adapter_matches_released_pixel_contract(self):
         try:
-            from transformers import Siglip2VisionConfig, Siglip2VisionModel
+            from transformers import SiglipVisionConfig, SiglipVisionModel
         except ImportError:
             self.skipTest("installed transformers has no SigLIP2")
-        config = Siglip2VisionConfig(
+        config = SiglipVisionConfig(
             hidden_size=32,
             intermediate_size=64,
             num_hidden_layers=2,
             num_attention_heads=4,
             patch_size=16,
-            num_patches=196,
+            image_size=32,
         )
-        adapter = SigLIP2Adapter(encoder=Siglip2VisionModel(config))
+        adapter = SigLIP2Adapter(encoder=SiglipVisionModel(config))
         output = adapter(torch.randn(2, 3, 32, 16))
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
         self.assertEqual(output.pre_norm_global.shape, (2, 32))

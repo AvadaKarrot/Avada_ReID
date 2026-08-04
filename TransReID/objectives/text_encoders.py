@@ -112,13 +112,17 @@ class SigLIP2TextEncoder(nn.Module):
                     "tokenizer are injected"
                 )
             try:
-                from transformers import Siglip2TextModel, Siglip2Tokenizer
+                from transformers import Siglip2Tokenizer, SiglipTextModel
             except ImportError as exc:
                 raise ImportError(
                     "SigLIP2 text alignment requires transformers"
                 ) from exc
             if text_model is None:
-                text_model = Siglip2TextModel.from_pretrained(model_name)
+                # SigLIP2 Base is published with the ``siglip`` checkpoint
+                # configuration, while using the SigLIP2 tokenizer/vocabulary.
+                # Loading Siglip2TextModel against that full checkpoint uses
+                # an incompatible model contract in recent Transformers.
+                text_model = SiglipTextModel.from_pretrained(model_name)
             if tokenizer is None:
                 # Use the explicit class so the training contract does not
                 # depend on tokenizer_class metadata from a Hub revision.

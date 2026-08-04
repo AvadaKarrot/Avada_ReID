@@ -2,7 +2,6 @@ from typing import Optional
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from ..outputs import BackboneOutput
 from .base import BackboneAdapter
@@ -24,55 +23,40 @@ class SigLIP2Adapter(BackboneAdapter):
         super().__init__()
         if encoder is None:
             try:
-                from transformers import Siglip2VisionModel
+                from transformers import SiglipVisionModel
             except ImportError as exc:
                 raise ImportError(
                     "SigLIP2 requires transformers. Install the project environment "
                     "before constructing this backbone."
                 ) from exc
-            encoder = Siglip2VisionModel.from_pretrained(model_name)
+            # The released SigLIP2 Base checkpoint is stored with the
+            # ``siglip`` configuration/API contract.  Loading it through
+            # Siglip2VisionModel changes the patch-embedding contract and
+            # silently reinitializes incompatible weights on recent
+            # Transformers versions.
+            encoder = SiglipVisionModel.from_pretrained(model_name)
 
         self.encoder = encoder
         self.patch_size = int(getattr(encoder.config, "patch_size", 16))
         self.output_dim = int(getattr(encoder.config, "hidden_size", self.output_dim))
         self.secondary_dim = self.output_dim
 
-    def _patchify(self, images: torch.Tensor):
+    def forward_features(self, images: torch.Tensor) -> BackboneOutput:
         if images.ndim != 4:
             raise ValueError(
                 f"Expected SigLIP2 images shaped [B, C, H, W], got {images.shape}"
             )
-        batch, _, height, width = images.shape
+        height, width = images.shape[-2:]
         if height % self.patch_size or width % self.patch_size:
             raise ValueError(
                 "SigLIP2 image height and width must be divisible by patch_size: "
                 f"got {(height, width)} and patch_size={self.patch_size}"
             )
-        patches = F.unfold(
-            images,
-            kernel_size=self.patch_size,
-            stride=self.patch_size,
-        ).transpose(1, 2)
         spatial_shape = (height // self.patch_size, width // self.patch_size)
-        spatial_shapes = torch.tensor(
-            [spatial_shape] * batch,
-            dtype=torch.long,
-            device=images.device,
-        )
-        pixel_attention_mask = torch.ones(
-            (batch, patches.shape[1]),
-            dtype=torch.bool,
-            device=images.device,
-        )
-        return patches, pixel_attention_mask, spatial_shapes, spatial_shape
-
-    def forward_features(self, images: torch.Tensor) -> BackboneOutput:
-        patches, attention_mask, spatial_shapes, spatial_shape = self._patchify(
-            images
-        )
 
         pre_norm = []
-        post_layernorm = getattr(self.encoder, "post_layernorm", None)
+        vision_tower = getattr(self.encoder, "vision_model", self.encoder)
+        post_layernorm = getattr(vision_tower, "post_layernorm", None)
         hook = None
         if post_layernorm is not None:
             hook = post_layernorm.register_forward_pre_hook(
@@ -80,9 +64,8 @@ class SigLIP2Adapter(BackboneAdapter):
             )
         try:
             outputs = self.encoder(
-                pixel_values=patches,
-                pixel_attention_mask=attention_mask,
-                spatial_shapes=spatial_shapes,
+                pixel_values=images,
+                interpolate_pos_encoding=True,
                 return_dict=True,
             )
         finally:
