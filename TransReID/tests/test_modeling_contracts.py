@@ -112,7 +112,10 @@ class ModelingContractTest(unittest.TestCase):
             static_position_embedding=True,
             target_image_size=(32, 16),
         )
-        embeddings = adapter.encoder.vision_model.embeddings
+        vision_tower = getattr(
+            adapter.encoder, "vision_model", adapter.encoder
+        )
+        embeddings = vision_tower.embeddings
         self.assertEqual(embeddings.position_embedding.weight.shape, (2, 32))
         self.assertTrue(embeddings.position_embedding.weight.requires_grad)
         images = torch.randn(2, 3, 32, 16)
