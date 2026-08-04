@@ -6,13 +6,16 @@ import json
 from pathlib import Path
 
 
-METHOD_CONFIGS = {
+DEFAULT_METHOD_CONFIGS = {
     "image_only": "configs/experiments/clip_market_to_msmt_image_only.yml",
     "caption_alignment": (
         "configs/experiments/"
         "clip_market_to_msmt_caption_alignment_v2_4.yml"
     ),
 }
+
+# Backward-compatible public alias used by older callers.
+METHOD_CONFIGS = DEFAULT_METHOD_CONFIGS
 
 EXPECTED_PROTOCOLS = {
     (
@@ -63,9 +66,21 @@ def validate_protocol2_matrix(matrix):
             f"{sorted(unknown_solver_keys)}"
         )
 
+    method_configs = matrix.get("method_configs", DEFAULT_METHOD_CONFIGS)
+    if set(method_configs) != {"image_only", "caption_alignment"}:
+        raise ValueError(
+            "Protocol-2 method_configs must define image_only and "
+            "caption_alignment"
+        )
+    if any(
+        not isinstance(path, str) or not path
+        for path in method_configs.values()
+    ):
+        raise ValueError("Protocol-2 method config paths must be non-empty")
+
     runs = matrix.get("runs", [])
     if len(runs) != 6:
-        raise ValueError("Protocol-2 CLIP matrix must contain six runs")
+        raise ValueError("Protocol-2 matrix must contain six runs")
     names = [run.get("name") for run in runs]
     outputs = [run.get("output_dir") for run in runs]
     if len(set(names)) != len(names):
@@ -76,9 +91,9 @@ def validate_protocol2_matrix(matrix):
     observed = {}
     for run in runs:
         method = run.get("method")
-        if method not in METHOD_CONFIGS:
+        if method not in method_configs:
             raise ValueError(f"Unknown Protocol-2 method: {method!r}")
-        if run.get("base_config") != METHOD_CONFIGS[method]:
+        if run.get("base_config") != method_configs[method]:
             raise ValueError(
                 f"Run {run.get('name')!r} uses the wrong base config"
             )
@@ -87,7 +102,7 @@ def validate_protocol2_matrix(matrix):
             raise ValueError(f"Unexpected Protocol-2 source/target row: {key}")
         observed.setdefault(key, set()).add(method)
 
-    expected_methods = set(METHOD_CONFIGS)
+    expected_methods = set(method_configs)
     if set(observed) != EXPECTED_PROTOCOLS:
         raise ValueError("Protocol-2 matrix is missing a source/target row")
     if any(methods != expected_methods for methods in observed.values()):

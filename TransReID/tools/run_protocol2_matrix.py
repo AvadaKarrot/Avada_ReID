@@ -1,4 +1,4 @@
-"""Run the verified CLIP Protocol-2 matrix sequentially and resumably."""
+"""Run a verified Protocol-2 matrix sequentially and resumably."""
 
 from __future__ import annotations
 
@@ -24,6 +24,16 @@ DEFAULT_MATRIX = (
     / "experiments"
     / "protocol2_clip_matrix.json"
 )
+
+DATA_ROOT = Path("/root/autodl-tmp")
+OFFLINE_ENV = {
+    "HF_HOME": str(DATA_ROOT / "hf_cache"),
+    "HF_HUB_CACHE": str(DATA_ROOT / "hf_cache" / "hub"),
+    "TORCH_HOME": str(DATA_ROOT / "hf_cache" / "torch"),
+    "XDG_CACHE_HOME": str(DATA_ROOT / "hf_cache" / "xdg"),
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+}
 
 
 def _timestamp():
@@ -127,6 +137,7 @@ def _run_one(matrix, run, mode, logs_dir):
     command = _command(matrix, run, mode, resume=resume)
     metadata = {
         "name": run["name"],
+        "backbone": matrix.get("backbone", "clip"),
         "method": run["method"],
         "sources": run["sources"],
         "target": run["target"],
@@ -139,10 +150,13 @@ def _run_one(matrix, run, mode, logs_dir):
     _write_json(running, metadata)
     print(f"START {run['name']} resume={resume}", flush=True)
 
+    environment = os.environ.copy()
+    environment.update(OFFLINE_ENV)
     with log_path.open("a", encoding="utf-8") as log_handle:
         result = subprocess.run(
             command,
             cwd=PROJECT_DIR,
+            env=environment,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             check=False,
@@ -177,7 +191,7 @@ def _run_one(matrix, run, mode, logs_dir):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run the verified Protocol-2 CLIP matrix"
+        description="Run a verified Protocol-2 matrix"
     )
     parser.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     parser.add_argument(
