@@ -1,3 +1,4 @@
+import copy
 import unittest
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ from modeling.heads import (
     CLIPReIDParityHead,
     MultiBranchParityHead,
     ReIDHead,
+    SigLIP2NativePoolerHead,
 )
 from modeling.outputs import BackboneOutput
 from modeling.reid_model import ReIDModel
@@ -89,6 +91,65 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
         self.assertEqual(output.pre_norm_global.shape, (2, 32))
         self.assertEqual(output.secondary_global.shape, (2, 32))
+
+    def test_siglip2_static_position_embedding_uses_target_grid(self):
+        try:
+            from transformers import SiglipVisionConfig, SiglipVisionModel
+        except ImportError:
+            self.skipTest("installed transformers has no SigLIP2")
+        config = SiglipVisionConfig(
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            patch_size=16,
+            image_size=32,
+        )
+        encoder = SiglipVisionModel(config).eval()
+        dynamic_adapter = SigLIP2Adapter(encoder=encoder)
+        adapter = SigLIP2Adapter(
+            encoder=copy.deepcopy(encoder),
+            static_position_embedding=True,
+            target_image_size=(32, 16),
+        )
+        embeddings = adapter.encoder.vision_model.embeddings
+        self.assertEqual(embeddings.position_embedding.weight.shape, (2, 32))
+        self.assertTrue(embeddings.position_embedding.weight.requires_grad)
+        images = torch.randn(2, 3, 32, 16)
+        dynamic_output = dynamic_adapter(images)
+        output = adapter(images)
+        self.assertEqual(output.patch_features.shape, (2, 2, 32))
+        torch.testing.assert_close(
+            output.patch_features,
+            dynamic_output.patch_features,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        output.global_feature.sum().backward()
+        self.assertIsNotNone(embeddings.position_embedding.weight.grad)
+
+    def test_siglip2_native_pooler_head_uses_native_dimensions(self):
+        backbone_output = BackboneOutput(
+            global_feature=torch.randn(4, 32),
+            patch_features=torch.randn(4, 2, 32),
+            pre_norm_global=torch.randn(4, 32),
+            secondary_global=torch.randn(4, 32),
+            auxiliary_features={"alignment_global": torch.randn(4, 32)},
+        )
+        head = SigLIP2NativePoolerHead(
+            input_dim=32,
+            pooler_dim=32,
+            num_classes=2,
+        )
+        head.train()
+        outputs = head(backbone_output)
+        self.assertEqual(outputs.embedding.shape, (4, 64))
+        self.assertEqual(len(outputs.id_logits), 2)
+        self.assertEqual(
+            [feature.shape[1] for feature in outputs.metric_features],
+            [32, 32, 32],
+        )
+        self.assertEqual(outputs.alignment_feature.shape, (4, 32))
 
     def test_multibranch_parity_head_matches_clip_loss_contract(self):
         backbone_output = BackboneOutput(

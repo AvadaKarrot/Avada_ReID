@@ -1,5 +1,10 @@
 from .backbones import build_backbone
-from .heads import CLIPReIDParityHead, MultiBranchParityHead, ReIDHead
+from .heads import (
+    CLIPReIDParityHead,
+    MultiBranchParityHead,
+    ReIDHead,
+    SigLIP2NativePoolerHead,
+)
 from .reid_model import ReIDModel
 
 
@@ -48,6 +53,12 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
                 "projection is already pretrained"
             )
         head = None
+    elif head_type == "siglip2_native_pooler":
+        if backbone_name != "siglip2_base_patch16":
+            raise ValueError(
+                "siglip2_native_pooler requires siglip2_base_patch16"
+            )
+        head = None
     elif head_type != "standard":
         raise ValueError(f"Unsupported ReID head: {head_type}")
     else:
@@ -57,6 +68,13 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
     model_name = _getattr_path(cfg, "MODEL.BACKBONE.PRETRAINED_NAME")
     if model_name and backbone_name != "clip_vit_b16":
         kwargs["model_name"] = model_name
+    if backbone_name == "siglip2_base_patch16":
+        kwargs["static_position_embedding"] = bool(
+            _getattr_path(
+                cfg, "MODEL.BACKBONE.STATIC_POSITION_EMBEDDING", False
+            )
+        )
+        kwargs["target_image_size"] = tuple(cfg.INPUT.SIZE_TRAIN)
 
     backbone = build_backbone(backbone_name, **kwargs)
     if head is None and head_type == "multibranch_parity":
@@ -67,6 +85,15 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
             input_dim=backbone.output_dim,
             secondary_dim=secondary_dim,
             projected_dim=512,
+            num_classes=num_classes,
+            neck_feature=str(_getattr_path(cfg, "TEST.NECK_FEAT", "before")),
+        )
+    elif head is None and head_type == "siglip2_native_pooler":
+        head = SigLIP2NativePoolerHead(
+            input_dim=backbone.output_dim,
+            pooler_dim=int(
+                getattr(backbone, "secondary_dim", backbone.output_dim)
+            ),
             num_classes=num_classes,
             neck_feature=str(_getattr_path(cfg, "TEST.NECK_FEAT", "before")),
         )
