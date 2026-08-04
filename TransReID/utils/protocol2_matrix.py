@@ -44,6 +44,11 @@ ALLOWED_SOLVER_OVERRIDES = {
     "CHECKPOINT_PERIOD",
 }
 
+ALLOWED_MODEL_OVERRIDES = {
+    "BACKBONE.STATIC_POSITION_EMBEDDING",
+    "HEAD.TYPE",
+}
+
 
 def load_protocol2_matrix(path):
     with Path(path).open("r", encoding="utf-8") as handle:
@@ -64,6 +69,14 @@ def validate_protocol2_matrix(matrix):
         raise ValueError(
             "Unsupported Protocol-2 solver overrides: "
             f"{sorted(unknown_solver_keys)}"
+        )
+
+    model_overrides = matrix.get("model_overrides", {})
+    unknown_model_keys = set(model_overrides) - ALLOWED_MODEL_OVERRIDES
+    if unknown_model_keys:
+        raise ValueError(
+            "Unsupported Protocol-2 model overrides: "
+            f"{sorted(unknown_model_keys)}"
         )
 
     method_configs = matrix.get("method_configs", DEFAULT_METHOD_CONFIGS)
@@ -127,4 +140,7 @@ def config_overrides(matrix, run):
         overrides.extend(
             [f"SOLVER.{key}", serialized]
         )
+    for key, value in matrix.get("model_overrides", {}).items():
+        serialized = json.dumps(value) if isinstance(value, list) else str(value)
+        overrides.extend([f"MODEL.{key}", serialized])
     return overrides

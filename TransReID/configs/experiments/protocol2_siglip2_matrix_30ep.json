@@ -1,13 +1,17 @@
 {
   "protocol": "Protocol-2",
   "backbone": "siglip2",
-  "schedule": "30ep_eval5_s1",
+  "schedule": "static_native_30ep_eval5_s1",
   "combineall": false,
   "method_configs": {
     "image_only": "configs/experiments/siglip2_multibranch_image_only.yml",
     "caption_alignment": "configs/experiments/siglip2_multibranch_caption_alignment.yml"
   },
-  "smoke_output_root": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/smoke",
+  "smoke_output_root": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/smoke",
+  "model_overrides": {
+    "HEAD.TYPE": "siglip2_native_pooler",
+    "BACKBONE.STATIC_POSITION_EMBEDDING": true
+  },
   "solver_overrides": {
     "MAX_EPOCHS": 30,
     "BASE_LR": 0.000005,
@@ -20,63 +24,63 @@
   },
   "gate": {
     "runs": [
-      "siglip2_ms_cs_c3_to_m_image_only_30ep",
-      "siglip2_ms_cs_c3_to_m_caption_alignment_30ep"
+      "siglip2_static_native_ms_cs_c3_to_m_image_only_30ep",
+      "siglip2_static_native_ms_cs_c3_to_m_caption_alignment_30ep"
     ],
     "baseline_best_mAP": {
-      "siglip2_ms_cs_c3_to_m_image_only_30ep": 0.4013,
-      "siglip2_ms_cs_c3_to_m_caption_alignment_30ep": 0.4141
+      "siglip2_static_native_ms_cs_c3_to_m_image_only_30ep": 0.4138,
+      "siglip2_static_native_ms_cs_c3_to_m_caption_alignment_30ep": 0.4141
     },
     "require_all": true
   },
   "runs": [
     {
-      "name": "siglip2_m_ms_cs_to_c3_image_only_30ep",
+      "name": "siglip2_static_native_m_ms_cs_to_c3_image_only_30ep",
       "method": "image_only",
       "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
       "sources": ["market1501", "msmt17", "cuhksysu"],
       "target": "cuhk03",
-      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/image_only/m_ms_cs_to_c3/seed_1234"
+      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/image_only/m_ms_cs_to_c3/seed_1234"
     },
     {
-      "name": "siglip2_m_ms_cs_to_c3_caption_alignment_30ep",
+      "name": "siglip2_static_native_m_ms_cs_to_c3_caption_alignment_30ep",
       "method": "caption_alignment",
       "base_config": "configs/experiments/siglip2_multibranch_caption_alignment.yml",
       "sources": ["market1501", "msmt17", "cuhksysu"],
       "target": "cuhk03",
-      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/caption_alignment/m_ms_cs_to_c3/seed_1234"
+      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/caption_alignment/m_ms_cs_to_c3/seed_1234"
     },
     {
-      "name": "siglip2_m_cs_c3_to_ms_image_only_30ep",
+      "name": "siglip2_static_native_m_cs_c3_to_ms_image_only_30ep",
       "method": "image_only",
       "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
       "sources": ["market1501", "cuhksysu", "cuhk03"],
       "target": "msmt17",
-      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/image_only/m_cs_c3_to_ms/seed_1234"
+      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/image_only/m_cs_c3_to_ms/seed_1234"
     },
     {
-      "name": "siglip2_m_cs_c3_to_ms_caption_alignment_30ep",
+      "name": "siglip2_static_native_m_cs_c3_to_ms_caption_alignment_30ep",
       "method": "caption_alignment",
       "base_config": "configs/experiments/siglip2_multibranch_caption_alignment.yml",
       "sources": ["market1501", "cuhksysu", "cuhk03"],
       "target": "msmt17",
-      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/caption_alignment/m_cs_c3_to_ms/seed_1234"
+      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/caption_alignment/m_cs_c3_to_ms/seed_1234"
     },
     {
-      "name": "siglip2_ms_cs_c3_to_m_image_only_30ep",
+      "name": "siglip2_static_native_ms_cs_c3_to_m_image_only_30ep",
       "method": "image_only",
       "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
       "sources": ["msmt17", "cuhksysu", "cuhk03"],
       "target": "market1501",
-      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/image_only/ms_cs_c3_to_m/seed_1234"
+      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/image_only/ms_cs_c3_to_m/seed_1234"
     },
     {
-      "name": "siglip2_ms_cs_c3_to_m_caption_alignment_30ep",
+      "name": "siglip2_static_native_ms_cs_c3_to_m_caption_alignment_30ep",
       "method": "caption_alignment",
       "base_config": "configs/experiments/siglip2_multibranch_caption_alignment.yml",
       "sources": ["msmt17", "cuhksysu", "cuhk03"],
       "target": "market1501",
-      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_30ep/caption_alignment/ms_cs_c3_to_m/seed_1234"
+      "output_dir": "/root/autodl-tmp/experiments/protocol2_siglip2_static_native_30ep/caption_alignment/ms_cs_c3_to_m/seed_1234"
     }
   ]
 }

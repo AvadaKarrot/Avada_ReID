@@ -99,12 +99,23 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
         matrix = load_protocol2_matrix(MATRIX_PATH_SIGLIP2_30)
         self.assertEqual(matrix["backbone"], "siglip2")
         self.assertEqual(
+            matrix["model_overrides"],
+            {
+                "HEAD.TYPE": "siglip2_native_pooler",
+                "BACKBONE.STATIC_POSITION_EMBEDDING": True,
+            },
+        )
+        self.assertEqual(
             matrix["method_configs"]["image_only"],
             "configs/experiments/siglip2_multibranch_image_only.yml",
         )
         for run in matrix["runs"]:
             current = self._resolve(matrix, run)
             self.assertEqual(current.MODEL.BACKBONE.NAME, "siglip2_base_patch16")
+            self.assertEqual(current.MODEL.HEAD.TYPE, "siglip2_native_pooler")
+            self.assertTrue(
+                current.MODEL.BACKBONE.STATIC_POSITION_EMBEDDING
+            )
             self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
             self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
             self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
