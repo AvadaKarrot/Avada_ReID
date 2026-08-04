@@ -66,6 +66,10 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(encoder.last_pixel_values_shape, (2, 2, 768))
         self.assertEqual(output.pre_norm_global.shape, (2, 32))
         self.assertEqual(output.secondary_global.shape, (2, 32))
+        self.assertEqual(
+            output.auxiliary_features["alignment_global"].shape,
+            (2, 32),
+        )
 
     def test_siglip2_adapter_matches_transformers_patchified_contract(self):
         try:
@@ -92,6 +96,9 @@ class ModelingContractTest(unittest.TestCase):
             patch_features=torch.randn(4, 2, 32),
             pre_norm_global=torch.randn(4, 32),
             secondary_global=torch.randn(4, 32),
+            auxiliary_features={
+                "alignment_global": torch.randn(4, 32)
+            },
         )
         head = MultiBranchParityHead(
             input_dim=32,
@@ -107,6 +114,8 @@ class ModelingContractTest(unittest.TestCase):
             [feature.shape[1] for feature in outputs.metric_features],
             [32, 32, 16],
         )
+        self.assertEqual(outputs.alignment_feature.shape, (4, 32))
+        self.assertEqual(head.alignment_dim, 32)
 
     def test_reid_model_and_objective_contract(self):
         images = torch.randn(4, 3, 32, 16)

@@ -100,4 +100,5 @@ class SigLIP2Adapter(BackboneAdapter):
             spatial_shape=spatial_shape,
             pre_norm_global=pre_norm_tokens.mean(dim=1),
             secondary_global=pooled,
+            auxiliary_features={"alignment_global": pooled},
         )

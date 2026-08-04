@@ -170,7 +170,11 @@ class MultiBranchParityHead(nn.Module):
         self.secondary_dim = secondary_dim
         self.projected_dim = projected_dim
         self.embed_dim = input_dim
-        self.alignment_dim = projected_dim
+        # The native alignment branch, when supplied by a backbone such as
+        # SigLIP2, remains in the backbone hidden dimension. The learned
+        # 512-D projection below is ReID-only and must not redefine the
+        # pretrained image-text space.
+        self.alignment_dim = input_dim
         self.metric_dims = (input_dim, input_dim, projected_dim)
         self.num_classes = num_classes
         self.neck_feature = neck_feature
@@ -209,6 +213,8 @@ class MultiBranchParityHead(nn.Module):
         projected_feature = self.secondary_projection(secondary_feature)
         embedding = self.bnneck(raw_feature)
         projected_embedding = self.bnneck_proj(projected_feature)
+        auxiliary = backbone_output.auxiliary_features or {}
+        alignment_feature = auxiliary.get("alignment_global")
 
         logits = None
         projected_logits = None
@@ -238,8 +244,5 @@ class MultiBranchParityHead(nn.Module):
                 raw_feature,
                 projected_feature,
             ),
-            # This projection is a ReID branch, not a guaranteed image-text
-            # shared space. Caption objectives for these backbones require an
-            # explicit, backbone-specific alignment adapter.
-            alignment_feature=None,
+            alignment_feature=alignment_feature,
         )

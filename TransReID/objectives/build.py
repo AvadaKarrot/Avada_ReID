@@ -1,6 +1,6 @@
 from .reid_objective import ReIDObjective
 from .losses import CaptionAlignmentObjective
-from .text_encoders import LegacyCLIPTextEncoder
+from .text_encoders import LegacyCLIPTextEncoder, SigLIP2TextEncoder
 
 
 def _getattr_path(obj, path, default=None):
@@ -38,10 +38,11 @@ def build_caption_objective(cfg, image_dim: int):
             cfg, "OBJECTIVE.CAPTION.TEXT_ENCODER", "clip_legacy"
         )
     ).lower()
-    if encoder_name != "clip_legacy":
+    if encoder_name not in {"clip_legacy", "siglip2_native"}:
         raise ValueError(
             "Unsupported Caption text encoder "
-            f"{encoder_name!r}; expected 'clip_legacy'"
+            f"{encoder_name!r}; expected 'clip_legacy' or "
+            "'siglip2_native'"
         )
 
     feature_level = str(
@@ -55,14 +56,23 @@ def build_caption_objective(cfg, image_dim: int):
             "implemented; token-level alignment is a separate ablation"
         )
 
-    text_encoder = LegacyCLIPTextEncoder(
-        cfg,
-        trainable=bool(
-            _getattr_path(
-                cfg, "OBJECTIVE.CAPTION.TEXT_TRAINABLE", False
-            )
-        ),
+    trainable = bool(
+        _getattr_path(cfg, "OBJECTIVE.CAPTION.TEXT_TRAINABLE", False)
     )
+    if encoder_name == "clip_legacy":
+        text_encoder = LegacyCLIPTextEncoder(cfg, trainable=trainable)
+    else:
+        model_name = str(
+            _getattr_path(cfg, "MODEL.BACKBONE.PRETRAINED_NAME", "")
+        )
+        if not model_name:
+            raise ValueError(
+                "siglip2_native requires MODEL.BACKBONE.PRETRAINED_NAME"
+            )
+        text_encoder = SigLIP2TextEncoder(
+            model_name=model_name,
+            trainable=trainable,
+        )
     return CaptionAlignmentObjective(
         image_dim=image_dim,
         text_dim=text_encoder.output_dim,

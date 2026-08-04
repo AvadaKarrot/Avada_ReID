@@ -5,6 +5,10 @@ def validate_training_config(current_cfg):
     caption_enabled = bool(current_cfg.OBJECTIVE.CAPTION.ENABLED)
     model_head = getattr(current_cfg.MODEL, "HEAD", None)
     head_type = str(getattr(model_head, "TYPE", "standard")).lower()
+    backbone_node = getattr(current_cfg.MODEL, "BACKBONE", None)
+    backbone_name = str(
+        getattr(backbone_node, "NAME", "clip_vit_b16")
+    ).lower()
     if current_cfg.MODEL.CAPTION:
         raise ValueError(
             "MODEL.CAPTION belongs to the legacy model-fusion path. "
@@ -12,10 +16,22 @@ def validate_training_config(current_cfg):
         )
     if caption_enabled:
         if head_type == "multibranch_parity":
-            raise ValueError(
-                "multibranch_parity is currently image-only. Its 512-D ReID "
-                "projection is not a pretrained image-text alignment space."
-            )
+            text_encoder = str(
+                getattr(
+                    current_cfg.OBJECTIVE.CAPTION,
+                    "TEXT_ENCODER",
+                    "clip_legacy",
+                )
+            ).lower()
+            if not (
+                backbone_name == "siglip2_base_patch16"
+                and text_encoder == "siglip2_native"
+            ):
+                raise ValueError(
+                    "multibranch_parity Caption alignment is supported only "
+                    "for siglip2_base_patch16 with siglip2_native; its "
+                    "512-D ReID projection is never an alignment space"
+                )
         if not current_cfg.OBJECTIVE.CAPTION.FILE:
             raise ValueError(
                 "Caption training requires OBJECTIVE.CAPTION.FILE"

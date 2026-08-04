@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from objectives.losses.caption_alignment import CaptionAlignmentObjective
-from objectives.text_encoders import LegacyCLIPTextEncoder
+from objectives.text_encoders import LegacyCLIPTextEncoder, SigLIP2TextEncoder
 
 
 class FakeTextEncoder(nn.Module):
@@ -154,6 +154,55 @@ class CaptionObjectiveTest(unittest.TestCase):
             ],
         )
         self.assertEqual(encoder.output_dim, 2)
+        self.assertTrue(
+            all(not parameter.requires_grad for parameter in encoder.parameters())
+        )
+        encoder.train()
+        self.assertFalse(encoder.training)
+
+    def test_siglip2_wrapper_uses_native_pooled_text_space(self):
+        class FakeTokenizer:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, captions, **kwargs):
+                self.calls.append((list(captions), kwargs))
+                return {
+                    "input_ids": torch.ones(len(captions), 4, dtype=torch.long),
+                    "attention_mask": torch.ones(
+                        len(captions), 4, dtype=torch.long
+                    ),
+                }
+
+        class FakeSigLIP2TextModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.anchor = nn.Parameter(torch.ones(1))
+                self.config = SimpleNamespace(
+                    hidden_size=6,
+                    max_position_embeddings=4,
+                )
+
+            def forward(self, input_ids, attention_mask, return_dict=True):
+                self.last_attention_mask = attention_mask
+                return SimpleNamespace(
+                    pooler_output=torch.ones(input_ids.shape[0], 6)
+                    * self.anchor
+                )
+
+        tokenizer = FakeTokenizer()
+        text_model = FakeSigLIP2TextModel()
+        encoder = SigLIP2TextEncoder(
+            text_model=text_model,
+            tokenizer=tokenizer,
+            trainable=False,
+        )
+        output = encoder(["first person", "second person"])
+        self.assertEqual(output.shape, (2, 6))
+        self.assertEqual(encoder.output_dim, 6)
+        self.assertEqual(tokenizer.calls[0][1]["padding"], "max_length")
+        self.assertTrue(tokenizer.calls[0][1]["truncation"])
+        self.assertEqual(tokenizer.calls[0][1]["max_length"], 4)
         self.assertTrue(
             all(not parameter.requires_grad for parameter in encoder.parameters())
         )

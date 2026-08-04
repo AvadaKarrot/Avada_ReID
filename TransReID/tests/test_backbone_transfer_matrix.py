@@ -3,6 +3,7 @@ from pathlib import Path
 
 from utils.backbone_transfer_matrix import (
     BACKBONE_CONFIGS,
+    BACKBONE_METHOD_CONFIGS,
     EXPECTED_DIRECTIONS,
     config_overrides,
     load_backbone_transfer_matrix,
@@ -23,15 +24,21 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         cls.matrix = load_backbone_transfer_matrix(MATRIX_PATH)
 
     def test_complete_cross_product(self):
-        self.assertEqual(len(self.matrix["runs"]), 18)
+        self.assertEqual(len(self.matrix["runs"]), 30)
         observed = {
-            (run["source"], run["target"], run["backbone"])
+            (
+                run["source"],
+                run["target"],
+                run["backbone"],
+                run.get("method", "image_only"),
+            )
             for run in self.matrix["runs"]
         }
         expected = {
-            (source, target, backbone)
+            (source, target, backbone, method)
             for source, target in EXPECTED_DIRECTIONS
-            for backbone in BACKBONE_CONFIGS
+            for backbone, methods in BACKBONE_METHOD_CONFIGS.items()
+            for method in methods
         }
         self.assertEqual(observed, expected)
 

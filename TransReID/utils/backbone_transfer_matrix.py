@@ -6,10 +6,29 @@ import json
 from pathlib import Path
 
 
+BACKBONE_METHOD_CONFIGS = {
+    "clip": {
+        "image_only":
+            "configs/experiments/clip_market_to_msmt_image_only.yml",
+        "caption_alignment":
+            "configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml",
+    },
+    "dinov3": {
+        "image_only":
+            "configs/experiments/dinov3_multibranch_image_only.yml",
+    },
+    "siglip2": {
+        "image_only":
+            "configs/experiments/siglip2_multibranch_image_only.yml",
+        "caption_alignment":
+            "configs/experiments/siglip2_multibranch_caption_alignment.yml",
+    },
+}
+
+# Compatibility alias for callers that only need the backbone names.
 BACKBONE_CONFIGS = {
-    "clip": "configs/experiments/clip_market_to_msmt_image_only.yml",
-    "dinov3": "configs/experiments/dinov3_multibranch_image_only.yml",
-    "siglip2": "configs/experiments/siglip2_multibranch_image_only.yml",
+    backbone: methods["image_only"]
+    for backbone, methods in BACKBONE_METHOD_CONFIGS.items()
 }
 
 EXPECTED_DIRECTIONS = {
@@ -53,7 +72,12 @@ def validate_backbone_transfer_matrix(matrix):
         raise ValueError(f"Unsupported solver overrides: {sorted(unknown)}")
 
     runs = matrix.get("runs", [])
-    expected_count = len(EXPECTED_DIRECTIONS) * len(BACKBONE_CONFIGS)
+    expected_methods = {
+        (backbone, method)
+        for backbone, methods in BACKBONE_METHOD_CONFIGS.items()
+        for method in methods
+    }
+    expected_count = len(EXPECTED_DIRECTIONS) * len(expected_methods)
     if len(runs) != expected_count:
         raise ValueError(
             f"Backbone transfer matrix requires {expected_count} runs"
@@ -68,20 +92,28 @@ def validate_backbone_transfer_matrix(matrix):
     observed = {}
     for run in runs:
         backbone = run.get("backbone")
-        if backbone not in BACKBONE_CONFIGS:
+        if backbone not in BACKBONE_METHOD_CONFIGS:
             raise ValueError(f"Unknown backbone: {backbone!r}")
-        if run.get("base_config") != BACKBONE_CONFIGS[backbone]:
+        method = run.get("method", "image_only")
+        methods = BACKBONE_METHOD_CONFIGS[backbone]
+        if method not in methods:
+            raise ValueError(
+                f"Unsupported method {method!r} for {backbone!r}"
+            )
+        if run.get("base_config") != methods[method]:
             raise ValueError(f"Wrong base config for {run.get('name')!r}")
         direction = (run.get("source"), run.get("target"))
         if direction not in EXPECTED_DIRECTIONS:
             raise ValueError(f"Unexpected transfer direction: {direction}")
-        observed.setdefault(direction, set()).add(backbone)
+        observed.setdefault(direction, set()).add((backbone, method))
 
     if set(observed) != EXPECTED_DIRECTIONS:
         raise ValueError("Matrix is missing a transfer direction")
-    expected_backbones = set(BACKBONE_CONFIGS)
-    if any(backbones != expected_backbones for backbones in observed.values()):
-        raise ValueError("Each direction requires all three backbones")
+    if any(methods != expected_methods for methods in observed.values()):
+        raise ValueError(
+            "Each direction requires CLIP and SigLIP2 image/Caption runs "
+            "plus DINOv3 image-only"
+        )
 
 
 def config_overrides(matrix, run):
