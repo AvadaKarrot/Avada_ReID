@@ -30,11 +30,22 @@ MATRIX_PATH_SIGLIP2_30 = (
     / "experiments"
     / "protocol2_siglip2_matrix_30ep.json"
 )
+MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30 = (
+    PROJECT_DIR
+    / "configs"
+    / "experiments"
+    / "protocol2_siglip2_penultimate_parity_30ep.json"
+)
 
 
 class Protocol2MatrixStructureTest(unittest.TestCase):
     def test_complete_matrix_loads(self):
-        for path in (MATRIX_PATH_60, MATRIX_PATH_30, MATRIX_PATH_SIGLIP2_30):
+        for path in (
+            MATRIX_PATH_60,
+            MATRIX_PATH_30,
+            MATRIX_PATH_SIGLIP2_30,
+            MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30,
+        ):
             matrix = load_protocol2_matrix(path)
             self.assertFalse(matrix["combineall"])
             self.assertEqual(len(matrix["runs"]), 6)
@@ -48,6 +59,7 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             load_protocol2_matrix(MATRIX_PATH_60),
             load_protocol2_matrix(MATRIX_PATH_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_30),
+            load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30),
         ]
 
     def _resolve(self, matrix, run):
@@ -116,6 +128,30 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             self.assertTrue(
                 current.MODEL.BACKBONE.STATIC_POSITION_EMBEDDING
             )
+            self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
+            self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
+            self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
+
+    def test_siglip2_penultimate_parity_matrix_matches_clip_loss_contract(self):
+        matrix = load_protocol2_matrix(
+            MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30
+        )
+        self.assertEqual(matrix["backbone"], "siglip2")
+        self.assertEqual(
+            matrix["model_overrides"],
+            {
+                "HEAD.TYPE": "multibranch_parity",
+                "BACKBONE.STATIC_POSITION_EMBEDDING": True,
+                "BACKBONE.PENULTIMATE_MAP_POOLER": True,
+            },
+        )
+        for run in matrix["runs"]:
+            current = self._resolve(matrix, run)
+            self.assertEqual(current.MODEL.HEAD.TYPE, "multibranch_parity")
+            self.assertTrue(
+                current.MODEL.BACKBONE.STATIC_POSITION_EMBEDDING
+            )
+            self.assertTrue(current.MODEL.BACKBONE.PENULTIMATE_MAP_POOLER)
             self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
             self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
             self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)

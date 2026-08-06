@@ -247,6 +247,22 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(outputs.alignment_feature.shape, (4, 32))
         self.assertEqual(head.alignment_dim, 32)
         self.assertIs(outputs.metric_features[0], penultimate_map)
+        self.assertIs(outputs.metric_features[1], backbone_output.global_feature)
+        self.assertEqual(outputs.metric_features[2].shape, (4, 16))
+        self.assertTrue(
+            torch.equal(
+                outputs.id_logits[0],
+                head.classifier(head.bnneck(backbone_output.global_feature)),
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                outputs.id_logits[1],
+                head.classifier_proj(
+                    head.bnneck_proj(outputs.metric_features[2])
+                ),
+            )
+        )
 
     def test_reid_model_and_objective_contract(self):
         images = torch.randn(4, 3, 32, 16)
