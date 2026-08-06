@@ -10,6 +10,73 @@ from .base import BackboneAdapter
 from .registry import register_backbone
 
 
+def resize_siglip2_position_embedding(
+    position_embedding: torch.Tensor,
+    target_grid,
+    source_grid=None,
+) -> torch.Tensor:
+    """Linearly resize a SigLIP2 patch-position table to a rectangular grid.
+
+    Unlike CLIP ViT, SigLIP2's position table contains patch positions only;
+    there is no leading CLS position to split off. ``target_grid`` and the
+    optional ``source_grid`` are ``(height, width)`` in patch units. The
+    function accepts either ``[num_patches, hidden_dim]`` or
+    ``[1, num_patches, hidden_dim]`` and preserves that input rank.
+
+    SigLIP2's reference high-resolution fine-tuning implementation uses
+    ``scipy.ndimage.zoom(order=1)``. PyTorch bilinear interpolation is the
+    differentiable first-order equivalent and also supports a non-square
+    target such as the 16x8 grid produced by 256x128 ReID inputs.
+    """
+
+    if position_embedding.ndim not in (2, 3):
+        raise ValueError(
+            "SigLIP2 position embedding must be [N, D] or [1, N, D], "
+            f"got {tuple(position_embedding.shape)}"
+        )
+    if position_embedding.ndim == 3:
+        if position_embedding.shape[0] != 1:
+            raise ValueError(
+                "Batched SigLIP2 position embedding must have leading size 1"
+            )
+        table = position_embedding[0]
+    else:
+        table = position_embedding
+
+    target_height, target_width = map(int, target_grid)
+    if target_height <= 0 or target_width <= 0:
+        raise ValueError("target_grid dimensions must be positive")
+
+    token_count, hidden_size = table.shape
+    if source_grid is None:
+        source_size = int(token_count ** 0.5)
+        if source_size * source_size != token_count:
+            raise ValueError(
+                "A non-square source position table requires source_grid"
+            )
+        source_height = source_width = source_size
+    else:
+        source_height, source_width = map(int, source_grid)
+        if source_height * source_width != token_count:
+            raise ValueError(
+                "source_grid does not match the position-table token count"
+            )
+
+    if (source_height, source_width) == (target_height, target_width):
+        return position_embedding
+
+    resized = F.interpolate(
+        table.reshape(
+            1, source_height, source_width, hidden_size
+        ).permute(0, 3, 1, 2),
+        size=(target_height, target_width),
+        # Match SigLIP2's scipy.ndimage.zoom(order=1) contract.
+        mode="bilinear",
+        align_corners=False,
+    ).permute(0, 2, 3, 1).reshape(-1, hidden_size)
+    return resized.unsqueeze(0) if position_embedding.ndim == 3 else resized
+
+
 class MAPHead(nn.Module):
     """PyTorch equivalent of big_vision's multihead attention pooler.
 
@@ -170,18 +237,11 @@ class SigLIP2Adapter(BackboneAdapter):
             )
 
         weight = position_embedding.weight.detach()
-        token_count, hidden_size = weight.shape
-        old_size = int(token_count ** 0.5)
-        if old_size * old_size != token_count:
-            raise RuntimeError(
-                "Pretrained SigLIP2 position table must form a square grid"
-            )
-        resized = F.interpolate(
-            weight.reshape(1, old_size, old_size, hidden_size).permute(0, 3, 1, 2),
-            size=target_grid,
-            mode="bicubic",
-            align_corners=False,
-        ).permute(0, 2, 3, 1).reshape(-1, hidden_size)
+        hidden_size = weight.shape[1]
+        try:
+            resized = resize_siglip2_position_embedding(weight, target_grid)
+        except ValueError as error:
+            raise RuntimeError(str(error)) from error
 
         replacement = nn.Embedding(resized.shape[0], hidden_size).to(
             device=weight.device, dtype=weight.dtype

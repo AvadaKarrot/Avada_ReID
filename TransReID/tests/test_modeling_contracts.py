@@ -6,7 +6,11 @@ import torch
 from torch import nn
 
 from modeling.backbones.dinov3 import DINOv3Adapter
-from modeling.backbones.siglip2 import MAPHead, SigLIP2Adapter
+from modeling.backbones.siglip2 import (
+    MAPHead,
+    SigLIP2Adapter,
+    resize_siglip2_position_embedding,
+)
 from modeling.heads import (
     CLIPReIDParityHead,
     MultiBranchParityHead,
@@ -47,6 +51,28 @@ class FakeEncoder(nn.Module):
             pooler_output=tokens.mean(dim=1) if self.pool else None,
             hidden_states=(tokens - 2.0, tokens - 1.0, tokens),
         )
+
+
+class FakeStaticEncoder(nn.Module):
+    def __init__(self, hidden_size=1, grid_size=2):
+        super().__init__()
+        self.config = SimpleNamespace(
+            patch_size=16,
+            hidden_size=hidden_size,
+            num_attention_heads=1,
+            intermediate_size=hidden_size * 4,
+            layer_norm_eps=1e-6,
+        )
+        embeddings = nn.Module()
+        embeddings.position_embedding = nn.Embedding(
+            grid_size * grid_size, hidden_size
+        )
+        embeddings.register_buffer(
+            "position_ids",
+            torch.arange(grid_size * grid_size).expand((1, -1)),
+        )
+        self.vision_model = nn.Module()
+        self.vision_model.embeddings = embeddings
 
 
 class ModelingContractTest(unittest.TestCase):
@@ -165,7 +191,6 @@ class ModelingContractTest(unittest.TestCase):
             image_size=32,
         )
         encoder = SiglipVisionModel(config).eval()
-        dynamic_adapter = SigLIP2Adapter(encoder=encoder)
         adapter = SigLIP2Adapter(
             encoder=copy.deepcopy(encoder),
             static_position_embedding=True,
@@ -178,17 +203,48 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(embeddings.position_embedding.weight.shape, (2, 32))
         self.assertTrue(embeddings.position_embedding.weight.requires_grad)
         images = torch.randn(2, 3, 32, 16)
-        dynamic_output = dynamic_adapter(images)
         output = adapter(images)
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
-        torch.testing.assert_close(
-            output.patch_features,
-            dynamic_output.patch_features,
-            rtol=1e-5,
-            atol=1e-5,
-        )
         output.global_feature.sum().backward()
         self.assertIsNotNone(embeddings.position_embedding.weight.grad)
+
+    def test_siglip2_static_position_embedding_uses_linear_resampling(self):
+        encoder = FakeStaticEncoder(hidden_size=1, grid_size=2)
+        with torch.no_grad():
+            encoder.vision_model.embeddings.position_embedding.weight.copy_(
+                torch.tensor([[0.0], [1.0], [2.0], [3.0]])
+            )
+        adapter = SigLIP2Adapter(
+            encoder=encoder,
+            static_position_embedding=True,
+            target_image_size=(48, 16),
+        )
+        expected = torch.nn.functional.interpolate(
+            torch.tensor([[[[0.0, 1.0], [2.0, 3.0]]]]),
+            size=(3, 1),
+            mode="bilinear",
+            align_corners=False,
+        ).permute(0, 2, 3, 1).reshape(-1, 1)
+        actual = (
+            adapter.encoder.vision_model.embeddings.position_embedding.weight
+        )
+        torch.testing.assert_close(actual, expected)
+
+    def test_siglip2_resize_supports_rectangular_source_and_3d_table(self):
+        table = torch.arange(6.0).reshape(1, 6, 1)
+        resized = resize_siglip2_position_embedding(
+            table,
+            target_grid=(4, 1),
+            source_grid=(2, 3),
+        )
+        expected = torch.nn.functional.interpolate(
+            table[0].reshape(1, 2, 3, 1).permute(0, 3, 1, 2),
+            size=(4, 1),
+            mode="bilinear",
+            align_corners=False,
+        ).permute(0, 2, 3, 1).reshape(1, 4, 1)
+        self.assertEqual(resized.shape, (1, 4, 1))
+        torch.testing.assert_close(resized, expected)
 
     def test_siglip2_native_pooler_head_uses_native_dimensions(self):
         penultimate_map = torch.randn(4, 32)
