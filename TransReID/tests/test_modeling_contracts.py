@@ -252,8 +252,7 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(resized.shape, (1, 4, 1))
         torch.testing.assert_close(resized, expected)
 
-    def test_siglip2_native_pooler_head_uses_only_map_features(self):
-        penultimate_map = torch.randn(4, 32)
+    def test_siglip2_native_pooler_head_uses_only_final_map_feature(self):
         backbone_output = BackboneOutput(
             global_feature=torch.randn(4, 32),
             patch_features=torch.randn(4, 2, 32),
@@ -261,7 +260,6 @@ class ModelingContractTest(unittest.TestCase):
             secondary_global=torch.randn(4, 32),
             auxiliary_features={
                 "alignment_global": torch.randn(4, 32),
-                "penultimate_map_global": penultimate_map,
             },
         )
         head = SigLIP2NativePoolerHead(
@@ -275,12 +273,11 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(len(outputs.id_logits), 1)
         self.assertEqual(
             [feature.shape[1] for feature in outputs.metric_features],
-            [32, 32],
+            [32],
         )
         self.assertEqual(outputs.alignment_feature.shape, (4, 32))
-        self.assertIs(outputs.metric_features[0], penultimate_map)
         self.assertIs(
-            outputs.metric_features[1],
+            outputs.metric_features[0],
             backbone_output.secondary_global,
         )
         self.assertIs(outputs.raw_feature, backbone_output.secondary_global)

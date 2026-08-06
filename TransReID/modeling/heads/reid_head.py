@@ -252,7 +252,7 @@ class MultiBranchParityHead(nn.Module):
 
 
 class SigLIP2NativePoolerHead(nn.Module):
-    """Use only SigLIP2 MAP features, without patch-mean or projection branches."""
+    """Use only SigLIP2's final pretrained MAP feature."""
 
     def __init__(
         self,
@@ -268,7 +268,7 @@ class SigLIP2NativePoolerHead(nn.Module):
         self.pooler_dim = pooler_dim
         self.embed_dim = pooler_dim
         self.alignment_dim = pooler_dim
-        self.metric_dims = (pooler_dim, pooler_dim)
+        self.metric_dims = (pooler_dim,)
         self.num_classes = num_classes
         self.neck_feature = neck_feature
 
@@ -287,11 +287,6 @@ class SigLIP2NativePoolerHead(nn.Module):
             )
 
         auxiliary = backbone_output.auxiliary_features or {}
-        penultimate_map_feature = auxiliary.get("penultimate_map_global")
-        if penultimate_map_feature is None:
-            raise RuntimeError(
-                "SigLIP2NativePoolerHead requires penultimate_map_global"
-            )
         pooler_embedding = self.bnneck_pooler(pooler_feature)
         pooler_logits = None
         if self.training:
@@ -308,9 +303,6 @@ class SigLIP2NativePoolerHead(nn.Module):
             logits=pooler_logits,
             patch_features=backbone_output.patch_features,
             id_logits=(pooler_logits,) if pooler_logits is not None else None,
-            metric_features=(
-                penultimate_map_feature,
-                pooler_feature,
-            ),
+            metric_features=(pooler_feature,),
             alignment_feature=auxiliary.get("alignment_global", pooler_feature),
         )

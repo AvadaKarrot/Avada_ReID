@@ -17,11 +17,11 @@ MATRIX_PATH = (
     / "backbone_transfer_matrix_s1.json"
 )
 
-SIGLIP2_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH = (
+SIGLIP2_FINAL_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH = (
     Path(__file__).resolve().parents[1]
     / "configs"
     / "experiments"
-    / "siglip2_map_only_image_only_s1_30ep.json"
+    / "siglip2_final_map_only_image_only_s1_30ep.json"
 )
 
 
@@ -67,9 +67,9 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         self.assertIn("DATASETS.TARGETS", joined)
         self.assertIn("DATASETS.COMBINEALL False", joined)
 
-    def test_siglip2_map_only_image_only_scoped_matrix(self):
+    def test_siglip2_final_map_only_image_only_scoped_matrix(self):
         matrix = load_backbone_transfer_matrix(
-            SIGLIP2_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH
+            SIGLIP2_FINAL_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH
         )
         self.assertEqual(len(matrix["runs"]), 6)
         self.assertEqual(
@@ -84,7 +84,7 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         joined = " ".join(overrides)
         self.assertIn("MODEL.HEAD.TYPE siglip2_native_pooler", joined)
         self.assertIn("MODEL.BACKBONE.STATIC_POSITION_EMBEDDING True", joined)
-        self.assertIn("MODEL.BACKBONE.PENULTIMATE_MAP_POOLER True", joined)
+        self.assertIn("MODEL.BACKBONE.PENULTIMATE_MAP_POOLER False", joined)
 
 
 if __name__ == "__main__":
