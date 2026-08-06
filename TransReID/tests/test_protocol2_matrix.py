@@ -36,6 +36,12 @@ MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30 = (
     / "experiments"
     / "protocol2_siglip2_penultimate_parity_30ep.json"
 )
+MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30 = (
+    PROJECT_DIR
+    / "configs"
+    / "experiments"
+    / "protocol2_siglip2_penultimate_native_30ep.json"
+)
 
 
 class Protocol2MatrixStructureTest(unittest.TestCase):
@@ -45,6 +51,7 @@ class Protocol2MatrixStructureTest(unittest.TestCase):
             MATRIX_PATH_30,
             MATRIX_PATH_SIGLIP2_30,
             MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30,
+            MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30,
         ):
             matrix = load_protocol2_matrix(path)
             self.assertFalse(matrix["combineall"])
@@ -60,6 +67,7 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             load_protocol2_matrix(MATRIX_PATH_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30),
+            load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30),
         ]
 
     def _resolve(self, matrix, run):
@@ -155,6 +163,25 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
             self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
             self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
+
+    def test_siglip2_penultimate_native_matrix_has_no_random_projection(self):
+        matrix = load_protocol2_matrix(
+            MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30
+        )
+        self.assertEqual(
+            matrix["model_overrides"],
+            {
+                "HEAD.TYPE": "siglip2_native_pooler",
+                "BACKBONE.STATIC_POSITION_EMBEDDING": True,
+                "BACKBONE.PENULTIMATE_MAP_POOLER": True,
+            },
+        )
+        for run in matrix["runs"]:
+            current = self._resolve(matrix, run)
+            self.assertEqual(
+                current.MODEL.HEAD.TYPE, "siglip2_native_pooler"
+            )
+            self.assertTrue(current.MODEL.BACKBONE.PENULTIMATE_MAP_POOLER)
 
 
 if __name__ == "__main__":

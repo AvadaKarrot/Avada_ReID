@@ -83,8 +83,8 @@ class MAPHead(nn.Module):
     A learned probe attends to all patch tokens, then a pre-normalized MLP
     residual refines the single pooled token.  Released Hugging Face SigLIP2
     checkpoints already provide one pretrained instance after the final
-    encoder layer.  This implementation supplies an independent trainable
-    instance for the penultimate-layer ReID feature.
+    encoder layer. This implementation remains a compatibility fallback for
+    encoders that do not expose that native head.
     """
 
     def __init__(
@@ -188,6 +188,7 @@ class SigLIP2Adapter(BackboneAdapter):
         if self.penultimate_map_pooler_enabled:
             vision_tower = getattr(self.encoder, "vision_model", self.encoder)
             post_layernorm = getattr(vision_tower, "post_layernorm", None)
+            native_map_head = getattr(vision_tower, "head", None)
             layer_norm_eps = float(
                 getattr(encoder.config, "layer_norm_eps", 1e-6)
             )
@@ -201,14 +202,20 @@ class SigLIP2Adapter(BackboneAdapter):
                 self.penultimate_post_layernorm = nn.LayerNorm(
                     self.output_dim, eps=layer_norm_eps
                 )
-            self.penultimate_map_head = MAPHead(
-                hidden_size=self.output_dim,
-                num_heads=int(
-                    getattr(encoder.config, "num_attention_heads", 12)
-                ),
-                mlp_dim=getattr(encoder.config, "intermediate_size", None),
-                layer_norm_eps=layer_norm_eps,
-            )
+            if isinstance(native_map_head, nn.Module):
+                # Block 11 has no dedicated pooler in the checkpoint. Give
+                # its independent ReID branch a pretrained initialization by
+                # cloning SigLIP2's final MAP head instead of starting random.
+                self.penultimate_map_head = copy.deepcopy(native_map_head)
+            else:
+                self.penultimate_map_head = MAPHead(
+                    hidden_size=self.output_dim,
+                    num_heads=int(
+                        getattr(encoder.config, "num_attention_heads", 12)
+                    ),
+                    mlp_dim=getattr(encoder.config, "intermediate_size", None),
+                    layer_norm_eps=layer_norm_eps,
+                )
         self.static_position_embedding = bool(static_position_embedding)
         self.position_grid = None
         if self.static_position_embedding:

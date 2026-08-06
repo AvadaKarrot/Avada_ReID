@@ -163,11 +163,17 @@ class ModelingContractTest(unittest.TestCase):
         vision_tower = getattr(
             adapter.encoder, "vision_model", adapter.encoder
         )
-        self.assertIsInstance(adapter.penultimate_map_head, MAPHead)
         self.assertIsNot(
             adapter.penultimate_map_head,
             vision_tower.head,
         )
+        native_state = vision_tower.head.state_dict()
+        penultimate_state = adapter.penultimate_map_head.state_dict()
+        self.assertEqual(native_state.keys(), penultimate_state.keys())
+        for name in native_state:
+            torch.testing.assert_close(
+                native_state[name], penultimate_state[name]
+            )
         output = adapter(torch.randn(2, 3, 32, 16))
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
         self.assertEqual(output.pre_norm_global.shape, (2, 32))
@@ -273,6 +279,19 @@ class ModelingContractTest(unittest.TestCase):
         )
         self.assertEqual(outputs.alignment_feature.shape, (4, 32))
         self.assertIs(outputs.metric_features[0], penultimate_map)
+        self.assertIs(outputs.metric_features[1], backbone_output.global_feature)
+        self.assertIs(outputs.metric_features[2], backbone_output.secondary_global)
+        self.assertFalse(hasattr(head, "secondary_projection"))
+        torch.testing.assert_close(
+            outputs.embedding,
+            torch.cat(
+                (
+                    backbone_output.global_feature,
+                    backbone_output.secondary_global,
+                ),
+                dim=1,
+            ),
+        )
 
     def test_multibranch_parity_head_matches_clip_loss_contract(self):
         penultimate_map = torch.randn(4, 32)
