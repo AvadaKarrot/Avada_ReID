@@ -1,0 +1,81 @@
+{
+  "protocol": "one-source-one-target",
+  "schedule": "siglip2_penultimate_pretrained_map_native_image_only_s1_30ep_eval5",
+  "combineall": false,
+  "selection": {
+    "backbones": ["siglip2"],
+    "methods": ["image_only"]
+  },
+  "smoke_output_root": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/smoke",
+  "model_overrides": {
+    "HEAD.TYPE": "siglip2_native_pooler",
+    "BACKBONE.STATIC_POSITION_EMBEDDING": true,
+    "BACKBONE.PENULTIMATE_MAP_POOLER": true
+  },
+  "solver_overrides": {
+    "MAX_EPOCHS": 30,
+    "BASE_LR": 0.000005,
+    "WARMUP_ITERS": 5,
+    "WARMUP_FACTOR": 0.1,
+    "STEPS": [5, 20],
+    "GAMMA": 0.1,
+    "EVAL_PERIOD": 5,
+    "CHECKPOINT_PERIOD": 5
+  },
+  "runs": [
+    {
+      "name": "siglip2_penultimate_native_ms_to_m_image_only_s1_30ep",
+      "backbone": "siglip2",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "msmt17",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/ms_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_penultimate_native_m_to_ms_image_only_s1_30ep",
+      "backbone": "siglip2",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "market1501",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/m_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_penultimate_native_ms_to_c3_image_only_s1_30ep",
+      "backbone": "siglip2",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "msmt17",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/ms_to_c3/seed_1234"
+    },
+    {
+      "name": "siglip2_penultimate_native_c3_to_ms_image_only_s1_30ep",
+      "backbone": "siglip2",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "cuhk03",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/c3_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_penultimate_native_c3_to_m_image_only_s1_30ep",
+      "backbone": "siglip2",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "cuhk03",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/c3_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_penultimate_native_m_to_c3_image_only_s1_30ep",
+      "backbone": "siglip2",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_multibranch_image_only.yml",
+      "source": "market1501",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/siglip2_penultimate_native_image_only_s1_30ep/m_to_c3/seed_1234"
+    }
+  ]
+}

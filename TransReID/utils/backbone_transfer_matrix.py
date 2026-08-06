@@ -52,6 +52,12 @@ ALLOWED_SOLVER_OVERRIDES = {
     "CHECKPOINT_PERIOD",
 }
 
+ALLOWED_MODEL_OVERRIDES = {
+    "BACKBONE.PENULTIMATE_MAP_POOLER",
+    "BACKBONE.STATIC_POSITION_EMBEDDING",
+    "HEAD.TYPE",
+}
+
 
 def load_backbone_transfer_matrix(path):
     with Path(path).open("r", encoding="utf-8") as handle:
@@ -66,16 +72,46 @@ def validate_backbone_transfer_matrix(matrix):
     if matrix.get("combineall") is not False:
         raise ValueError("Source-only transfer requires combineall=false")
 
+    selection = matrix.get("selection", {})
+    unknown_selection = set(selection) - {"backbones", "methods"}
+    if unknown_selection:
+        raise ValueError(
+            f"Unsupported transfer selection: {sorted(unknown_selection)}"
+        )
+    selected_backbones = set(
+        selection.get("backbones", BACKBONE_METHOD_CONFIGS)
+    )
+    unknown_backbones = selected_backbones - set(BACKBONE_METHOD_CONFIGS)
+    if unknown_backbones:
+        raise ValueError(f"Unknown selected backbones: {sorted(unknown_backbones)}")
+    selected_methods = set(selection.get("methods", ()))
+    if selected_methods:
+        available_methods = {
+            method
+            for backbone in selected_backbones
+            for method in BACKBONE_METHOD_CONFIGS[backbone]
+        }
+        unknown_methods = selected_methods - available_methods
+        if unknown_methods:
+            raise ValueError(f"Unknown selected methods: {sorted(unknown_methods)}")
+
     solver_overrides = matrix.get("solver_overrides", {})
     unknown = set(solver_overrides) - ALLOWED_SOLVER_OVERRIDES
     if unknown:
         raise ValueError(f"Unsupported solver overrides: {sorted(unknown)}")
 
+    model_overrides = matrix.get("model_overrides", {})
+    unknown_model = set(model_overrides) - ALLOWED_MODEL_OVERRIDES
+    if unknown_model:
+        raise ValueError(f"Unsupported model overrides: {sorted(unknown_model)}")
+
     runs = matrix.get("runs", [])
     expected_methods = {
         (backbone, method)
         for backbone, methods in BACKBONE_METHOD_CONFIGS.items()
+        if backbone in selected_backbones
         for method in methods
+        if not selected_methods or method in selected_methods
     }
     expected_count = len(EXPECTED_DIRECTIONS) * len(expected_methods)
     if len(runs) != expected_count:
@@ -130,4 +166,7 @@ def config_overrides(matrix, run):
     for key, value in matrix.get("solver_overrides", {}).items():
         serialized = json.dumps(value) if isinstance(value, list) else str(value)
         overrides.extend([f"SOLVER.{key}", serialized])
+    for key, value in matrix.get("model_overrides", {}).items():
+        serialized = json.dumps(value) if isinstance(value, list) else str(value)
+        overrides.extend([f"MODEL.{key}", serialized])
     return overrides
