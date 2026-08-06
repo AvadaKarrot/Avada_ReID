@@ -19,6 +19,7 @@ EXPECTED_TRAIN = {
     "market1501": 12936,
     "msmt17": 30248,
     "cuhk03": 7365,
+    "cuhksysu": 34574,
 }
 
 
@@ -27,7 +28,7 @@ def _target_for(source):
 
 
 def validate_dataset(source, data_root, caption_file):
-    manager = ImageDataManager(
+    common_options = dict(
         root=data_root,
         sources=source,
         targets=_target_for(source),
@@ -36,11 +37,14 @@ def validate_dataset(source, data_root, caption_file):
         batch_size_test=8,
         workers=0,
         train_sampler="SequentialSampler",
+        use_gpu=False,
+    )
+    manager = ImageDataManager(
+        **common_options,
         caption=True,
         caption_file=caption_file,
         caption_selection="first",
         caption_missing_policy="error",
-        use_gpu=False,
     )
 
     records = manager.train_loader.dataset.train
@@ -77,16 +81,40 @@ def validate_dataset(source, data_root, caption_file):
             f"{source}: target evaluation batch leaked caption masks"
         )
 
+    image_only_manager = ImageDataManager(
+        **common_options,
+        caption=False,
+    )
+    image_only_batch = normalize_batch(
+        next(iter(image_only_manager.train_loader))
+    )
+    if image_only_batch["captions"] is not None:
+        raise AssertionError(
+            f"{source}: caption=False source batch contains captions"
+        )
+    if image_only_batch["caption_mask"] is not None:
+        raise AssertionError(
+            f"{source}: caption=False source batch contains caption masks"
+        )
+
     result = {
         "source": source,
         "target": _target_for(source),
         "train_records": len(records),
         "caption_covered": covered,
         "train_batch_named": True,
+        "caption_false_source_image_only": True,
         "target_batch_image_only": True,
         "source_eval_loader_lazy": True,
     }
-    del target_batch, train_batch, records, manager
+    del (
+        image_only_batch,
+        image_only_manager,
+        target_batch,
+        train_batch,
+        records,
+        manager,
+    )
     gc.collect()
     return result
 

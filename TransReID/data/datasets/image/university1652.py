@@ -2,7 +2,6 @@ from __future__ import division, print_function, absolute_import
 import os
 import glob
 import os.path as osp
-import gdown
 
 from ..dataset import ImageDataset
 
@@ -54,6 +53,8 @@ class University1652(ImageDataset):
         self.dataset_dir = osp.join(self.root, self.dataset_dir)
         print(self.dataset_dir)
         if not os.path.isdir(self.dataset_dir):
+            import gdown
+
             os.mkdir(self.dataset_dir)
             gdown.download(
                 self.dataset_url, self.dataset_dir + 'data.zip', quiet=False
