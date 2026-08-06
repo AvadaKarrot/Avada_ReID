@@ -17,11 +17,11 @@ MATRIX_PATH = (
     / "backbone_transfer_matrix_s1.json"
 )
 
-SIGLIP2_NATIVE_IMAGE_ONLY_MATRIX_PATH = (
+SIGLIP2_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH = (
     Path(__file__).resolve().parents[1]
     / "configs"
     / "experiments"
-    / "siglip2_penultimate_native_image_only_s1_30ep.json"
+    / "siglip2_map_only_image_only_s1_30ep.json"
 )
 
 
@@ -67,9 +67,9 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         self.assertIn("DATASETS.TARGETS", joined)
         self.assertIn("DATASETS.COMBINEALL False", joined)
 
-    def test_siglip2_native_image_only_scoped_matrix(self):
+    def test_siglip2_map_only_image_only_scoped_matrix(self):
         matrix = load_backbone_transfer_matrix(
-            SIGLIP2_NATIVE_IMAGE_ONLY_MATRIX_PATH
+            SIGLIP2_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH
         )
         self.assertEqual(len(matrix["runs"]), 6)
         self.assertEqual(

@@ -252,7 +252,7 @@ class ModelingContractTest(unittest.TestCase):
         self.assertEqual(resized.shape, (1, 4, 1))
         torch.testing.assert_close(resized, expected)
 
-    def test_siglip2_native_pooler_head_uses_native_dimensions(self):
+    def test_siglip2_native_pooler_head_uses_only_map_features(self):
         penultimate_map = torch.randn(4, 32)
         backbone_output = BackboneOutput(
             global_feature=torch.randn(4, 32),
@@ -271,26 +271,33 @@ class ModelingContractTest(unittest.TestCase):
         )
         head.train()
         outputs = head(backbone_output)
-        self.assertEqual(outputs.embedding.shape, (4, 64))
-        self.assertEqual(len(outputs.id_logits), 2)
+        self.assertEqual(outputs.embedding.shape, (4, 32))
+        self.assertEqual(len(outputs.id_logits), 1)
         self.assertEqual(
             [feature.shape[1] for feature in outputs.metric_features],
-            [32, 32, 32],
+            [32, 32],
         )
         self.assertEqual(outputs.alignment_feature.shape, (4, 32))
         self.assertIs(outputs.metric_features[0], penultimate_map)
-        self.assertIs(outputs.metric_features[1], backbone_output.global_feature)
-        self.assertIs(outputs.metric_features[2], backbone_output.secondary_global)
+        self.assertIs(
+            outputs.metric_features[1],
+            backbone_output.secondary_global,
+        )
+        self.assertIs(outputs.raw_feature, backbone_output.secondary_global)
+        self.assertTrue(
+            torch.equal(
+                outputs.id_logits[0],
+                head.classifier_pooler(
+                    head.bnneck_pooler(backbone_output.secondary_global)
+                ),
+            )
+        )
+        self.assertFalse(hasattr(head, "classifier"))
+        self.assertFalse(hasattr(head, "bnneck"))
         self.assertFalse(hasattr(head, "secondary_projection"))
         torch.testing.assert_close(
             outputs.embedding,
-            torch.cat(
-                (
-                    backbone_output.global_feature,
-                    backbone_output.secondary_global,
-                ),
-                dim=1,
-            ),
+            backbone_output.secondary_global,
         )
 
     def test_multibranch_parity_head_matches_clip_loss_contract(self):

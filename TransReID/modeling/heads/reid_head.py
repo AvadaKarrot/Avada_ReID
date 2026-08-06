@@ -252,7 +252,7 @@ class MultiBranchParityHead(nn.Module):
 
 
 class SigLIP2NativePoolerHead(nn.Module):
-    """Use SigLIP2's pretrained attention pooler without random compression."""
+    """Use only SigLIP2 MAP features, without patch-mean or projection branches."""
 
     def __init__(
         self,
@@ -266,64 +266,50 @@ class SigLIP2NativePoolerHead(nn.Module):
             raise ValueError("neck_feature must be 'before' or 'after'")
         self.input_dim = input_dim
         self.pooler_dim = pooler_dim
-        self.embed_dim = input_dim
+        self.embed_dim = pooler_dim
         self.alignment_dim = pooler_dim
-        self.metric_dims = (input_dim, input_dim, pooler_dim)
+        self.metric_dims = (pooler_dim, pooler_dim)
         self.num_classes = num_classes
         self.neck_feature = neck_feature
 
-        self.classifier = nn.Linear(input_dim, num_classes, bias=False)
         self.classifier_pooler = nn.Linear(pooler_dim, num_classes, bias=False)
-        CLIPReIDParityHead._init_classifier(self.classifier)
         CLIPReIDParityHead._init_classifier(self.classifier_pooler)
 
-        self.bnneck = nn.BatchNorm1d(input_dim)
-        self.bnneck.bias.requires_grad_(False)
         self.bnneck_pooler = nn.BatchNorm1d(pooler_dim)
         self.bnneck_pooler.bias.requires_grad_(False)
-        CLIPReIDParityHead._init_bn(self.bnneck)
         CLIPReIDParityHead._init_bn(self.bnneck_pooler)
 
     def forward(self, backbone_output: BackboneOutput):
-        pre_norm_feature = backbone_output.pre_norm_global
         pooler_feature = backbone_output.secondary_global
-        if pre_norm_feature is None or pooler_feature is None:
+        if pooler_feature is None:
             raise RuntimeError(
-                "SigLIP2NativePoolerHead requires pre_norm_global and "
-                "secondary_global"
+                "SigLIP2NativePoolerHead requires secondary_global"
             )
 
         auxiliary = backbone_output.auxiliary_features or {}
-        metric_first_feature = auxiliary.get(
-            "penultimate_map_global", pre_norm_feature
-        )
-        raw_feature = backbone_output.global_feature
-        embedding = self.bnneck(raw_feature)
+        penultimate_map_feature = auxiliary.get("penultimate_map_global")
+        if penultimate_map_feature is None:
+            raise RuntimeError(
+                "SigLIP2NativePoolerHead requires penultimate_map_global"
+            )
         pooler_embedding = self.bnneck_pooler(pooler_feature)
-        logits = None
         pooler_logits = None
         if self.training:
-            logits = self.classifier(embedding)
             pooler_logits = self.classifier_pooler(pooler_embedding)
 
         if self.neck_feature == "after":
-            evaluation_embedding = torch.cat(
-                (embedding, pooler_embedding), dim=1
-            )
+            evaluation_embedding = pooler_embedding
         else:
-            evaluation_embedding = torch.cat(
-                (raw_feature, pooler_feature), dim=1
-            )
+            evaluation_embedding = pooler_feature
 
         return ReIDOutput(
             embedding=evaluation_embedding,
-            raw_feature=raw_feature,
-            logits=logits,
+            raw_feature=pooler_feature,
+            logits=pooler_logits,
             patch_features=backbone_output.patch_features,
-            id_logits=(logits, pooler_logits) if logits is not None else None,
+            id_logits=(pooler_logits,) if pooler_logits is not None else None,
             metric_features=(
-                metric_first_feature,
-                raw_feature,
+                penultimate_map_feature,
                 pooler_feature,
             ),
             alignment_feature=auxiliary.get("alignment_global", pooler_feature),
