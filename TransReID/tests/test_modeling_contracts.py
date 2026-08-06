@@ -134,10 +134,13 @@ class ModelingContractTest(unittest.TestCase):
             encoder=SiglipVisionModel(config),
             penultimate_map_pooler=True,
         )
+        vision_tower = getattr(
+            adapter.encoder, "vision_model", adapter.encoder
+        )
         self.assertIsInstance(adapter.penultimate_map_head, MAPHead)
         self.assertIsNot(
             adapter.penultimate_map_head,
-            adapter.encoder.vision_model.head,
+            vision_tower.head,
         )
         output = adapter(torch.randn(2, 3, 32, 16))
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
