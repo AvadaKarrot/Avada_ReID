@@ -74,6 +74,11 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
                 cfg, "MODEL.BACKBONE.STATIC_POSITION_EMBEDDING", False
             )
         )
+        kwargs["penultimate_map_pooler"] = bool(
+            _getattr_path(
+                cfg, "MODEL.BACKBONE.PENULTIMATE_MAP_POOLER", False
+            )
+        )
         kwargs["target_image_size"] = tuple(cfg.INPUT.SIZE_TRAIN)
 
     backbone = build_backbone(backbone_name, **kwargs)

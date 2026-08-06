@@ -1,3 +1,4 @@
+import copy
 from typing import Optional
 
 import torch
@@ -7,6 +8,74 @@ from torch.nn import functional as F
 from ..outputs import BackboneOutput
 from .base import BackboneAdapter
 from .registry import register_backbone
+
+
+class MAPHead(nn.Module):
+    """PyTorch equivalent of big_vision's multihead attention pooler.
+
+    A learned probe attends to all patch tokens, then a pre-normalized MLP
+    residual refines the single pooled token.  Released Hugging Face SigLIP2
+    checkpoints already provide one pretrained instance after the final
+    encoder layer.  This implementation supplies an independent trainable
+    instance for the penultimate-layer ReID feature.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int = 12,
+        mlp_dim: Optional[int] = None,
+        layer_norm_eps: float = 1e-6,
+    ):
+        super().__init__()
+        if hidden_size % num_heads:
+            raise ValueError(
+                "MAPHead hidden_size must be divisible by num_heads: "
+                f"got hidden_size={hidden_size}, num_heads={num_heads}"
+            )
+        self.hidden_size = int(hidden_size)
+        self.num_heads = int(num_heads)
+        self.mlp_dim = int(mlp_dim or 4 * hidden_size)
+
+        self.probe = nn.Parameter(torch.empty(1, 1, hidden_size))
+        self.attention = nn.MultiheadAttention(
+            hidden_size, num_heads, batch_first=True
+        )
+        self.layernorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, self.mlp_dim),
+            nn.GELU(),
+            nn.Linear(self.mlp_dim, hidden_size),
+        )
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.probe)
+        nn.init.xavier_uniform_(self.attention.in_proj_weight)
+        nn.init.xavier_uniform_(self.attention.out_proj.weight)
+        if self.attention.in_proj_bias is not None:
+            nn.init.zeros_(self.attention.in_proj_bias)
+        if self.attention.out_proj.bias is not None:
+            nn.init.zeros_(self.attention.out_proj.bias)
+        for module in self.mlp:
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.normal_(module.bias, std=1e-6)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        if tokens.ndim != 3:
+            raise ValueError(
+                f"MAPHead expects tokens shaped [B, N, D], got {tokens.shape}"
+            )
+        if tokens.shape[-1] != self.hidden_size:
+            raise ValueError(
+                "MAPHead token dimension does not match hidden_size: "
+                f"got {tokens.shape[-1]}, expected {self.hidden_size}"
+            )
+        probe = self.probe.expand(tokens.shape[0], -1, -1)
+        pooled = self.attention(probe, tokens, tokens, need_weights=False)[0]
+        pooled = pooled + self.mlp(self.layernorm(pooled))
+        return pooled[:, 0]
 
 
 @register_backbone("siglip2_base_patch16")
@@ -21,6 +90,7 @@ class SigLIP2Adapter(BackboneAdapter):
         model_name: str = "google/siglip2-base-patch16-224",
         encoder: Optional[nn.Module] = None,
         static_position_embedding: bool = False,
+        penultimate_map_pooler: bool = False,
         target_image_size=None,
     ):
         super().__init__()
@@ -43,6 +113,35 @@ class SigLIP2Adapter(BackboneAdapter):
         self.patch_size = int(getattr(encoder.config, "patch_size", 16))
         self.output_dim = int(getattr(encoder.config, "hidden_size", self.output_dim))
         self.secondary_dim = self.output_dim
+        self.penultimate_map_pooler_enabled = bool(
+            penultimate_map_pooler
+        )
+        self.penultimate_post_layernorm = None
+        self.penultimate_map_head = None
+        if self.penultimate_map_pooler_enabled:
+            vision_tower = getattr(self.encoder, "vision_model", self.encoder)
+            post_layernorm = getattr(vision_tower, "post_layernorm", None)
+            layer_norm_eps = float(
+                getattr(encoder.config, "layer_norm_eps", 1e-6)
+            )
+            if isinstance(post_layernorm, nn.Module):
+                # Match the final native path structurally, but do not share
+                # normalization parameters between blocks 11 and 12.
+                self.penultimate_post_layernorm = copy.deepcopy(
+                    post_layernorm
+                )
+            else:
+                self.penultimate_post_layernorm = nn.LayerNorm(
+                    self.output_dim, eps=layer_norm_eps
+                )
+            self.penultimate_map_head = MAPHead(
+                hidden_size=self.output_dim,
+                num_heads=int(
+                    getattr(encoder.config, "num_attention_heads", 12)
+                ),
+                mlp_dim=getattr(encoder.config, "intermediate_size", None),
+                layer_norm_eps=layer_norm_eps,
+            )
         self.static_position_embedding = bool(static_position_embedding)
         self.position_grid = None
         if self.static_position_embedding:
@@ -124,6 +223,7 @@ class SigLIP2Adapter(BackboneAdapter):
             outputs = self.encoder(
                 pixel_values=images,
                 interpolate_pos_encoding=not self.static_position_embedding,
+                output_hidden_states=self.penultimate_map_pooler_enabled,
                 return_dict=True,
             )
         finally:
@@ -132,8 +232,27 @@ class SigLIP2Adapter(BackboneAdapter):
         tokens = outputs.last_hidden_state
         pooled = getattr(outputs, "pooler_output", None)
         if pooled is None:
-            pooled = tokens.mean(dim=1)
+            raise RuntimeError(
+                "SigLIP2 encoder must provide the pretrained final-layer "
+                "MAPHead output as pooler_output"
+            )
         pre_norm_tokens = pre_norm[0] if pre_norm else tokens
+        auxiliary_features = {"alignment_global": pooled}
+        if self.penultimate_map_pooler_enabled:
+            hidden_states = getattr(outputs, "hidden_states", None)
+            if hidden_states is None or len(hidden_states) < 3:
+                raise RuntimeError(
+                    "SigLIP2 encoder must return embedding and per-layer "
+                    "hidden states so the penultimate layer can be pooled"
+                )
+            # Hugging Face returns embeddings, block 1, ..., block 11,
+            # block 12. Therefore -2 is block 11 for the 12-layer Base model.
+            penultimate_tokens = self.penultimate_post_layernorm(
+                hidden_states[-2]
+            )
+            auxiliary_features["penultimate_map_global"] = (
+                self.penultimate_map_head(penultimate_tokens)
+            )
 
         return BackboneOutput(
             global_feature=tokens.mean(dim=1),
@@ -141,5 +260,5 @@ class SigLIP2Adapter(BackboneAdapter):
             spatial_shape=spatial_shape,
             pre_norm_global=pre_norm_tokens.mean(dim=1),
             secondary_global=pooled,
-            auxiliary_features={"alignment_global": pooled},
+            auxiliary_features=auxiliary_features,
         )

@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from modeling.backbones.dinov3 import DINOv3Adapter
-from modeling.backbones.siglip2 import SigLIP2Adapter
+from modeling.backbones.siglip2 import MAPHead, SigLIP2Adapter
 from modeling.heads import (
     CLIPReIDParityHead,
     MultiBranchParityHead,
@@ -23,7 +23,13 @@ class FakeEncoder(nn.Module):
         super().__init__()
         self.token_count = token_count
         self.pool = pool
-        self.config = SimpleNamespace(patch_size=16, hidden_size=hidden_size)
+        self.config = SimpleNamespace(
+            patch_size=16,
+            hidden_size=hidden_size,
+            num_attention_heads=4,
+            intermediate_size=hidden_size * 4,
+            layer_norm_eps=1e-6,
+        )
         self.anchor = nn.Parameter(torch.zeros(1))
         self.last_pixel_values_shape = None
 
@@ -39,7 +45,7 @@ class FakeEncoder(nn.Module):
         return SimpleNamespace(
             last_hidden_state=tokens,
             pooler_output=tokens.mean(dim=1) if self.pool else None,
-            hidden_states=(tokens - 1.0,),
+            hidden_states=(tokens - 2.0, tokens - 1.0, tokens),
         )
 
 
@@ -72,6 +78,44 @@ class ModelingContractTest(unittest.TestCase):
             output.auxiliary_features["alignment_global"].shape,
             (2, 32),
         )
+        self.assertNotIn(
+            "penultimate_map_global", output.auxiliary_features
+        )
+
+    def test_siglip2_penultimate_map_is_explicitly_opt_in(self):
+        images = torch.randn(2, 3, 32, 16)
+        adapter = SigLIP2Adapter(
+            encoder=FakeEncoder(token_count=2, hidden_size=32, pool=True),
+            penultimate_map_pooler=True,
+        )
+
+        output = adapter.forward_features(images)
+
+        self.assertEqual(
+            output.auxiliary_features["penultimate_map_global"].shape,
+            (2, 32),
+        )
+
+    def test_big_vision_map_head_contract(self):
+        pooler = MAPHead(hidden_size=32, num_heads=4)
+        tokens = torch.randn(2, 6, 32, requires_grad=True)
+
+        pooled = pooler(tokens)
+
+        self.assertEqual(pooled.shape, (2, 32))
+        self.assertEqual(pooler.probe.shape, (1, 1, 32))
+        pooled.sum().backward()
+        self.assertIsNotNone(tokens.grad)
+        self.assertIsNotNone(pooler.probe.grad)
+
+    def test_siglip2_adapter_requires_pretrained_final_pooler(self):
+        images = torch.randn(2, 3, 32, 16)
+        adapter = SigLIP2Adapter(
+            encoder=FakeEncoder(token_count=2, hidden_size=32, pool=False)
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "pretrained final-layer"):
+            adapter.forward_features(images)
 
     def test_siglip2_adapter_matches_released_pixel_contract(self):
         try:
@@ -86,11 +130,23 @@ class ModelingContractTest(unittest.TestCase):
             patch_size=16,
             image_size=32,
         )
-        adapter = SigLIP2Adapter(encoder=SiglipVisionModel(config))
+        adapter = SigLIP2Adapter(
+            encoder=SiglipVisionModel(config),
+            penultimate_map_pooler=True,
+        )
+        self.assertIsInstance(adapter.penultimate_map_head, MAPHead)
+        self.assertIsNot(
+            adapter.penultimate_map_head,
+            adapter.encoder.vision_model.head,
+        )
         output = adapter(torch.randn(2, 3, 32, 16))
         self.assertEqual(output.patch_features.shape, (2, 2, 32))
         self.assertEqual(output.pre_norm_global.shape, (2, 32))
         self.assertEqual(output.secondary_global.shape, (2, 32))
+        self.assertEqual(
+            output.auxiliary_features["penultimate_map_global"].shape,
+            (2, 32),
+        )
 
     def test_siglip2_static_position_embedding_uses_target_grid(self):
         try:
@@ -132,12 +188,16 @@ class ModelingContractTest(unittest.TestCase):
         self.assertIsNotNone(embeddings.position_embedding.weight.grad)
 
     def test_siglip2_native_pooler_head_uses_native_dimensions(self):
+        penultimate_map = torch.randn(4, 32)
         backbone_output = BackboneOutput(
             global_feature=torch.randn(4, 32),
             patch_features=torch.randn(4, 2, 32),
             pre_norm_global=torch.randn(4, 32),
             secondary_global=torch.randn(4, 32),
-            auxiliary_features={"alignment_global": torch.randn(4, 32)},
+            auxiliary_features={
+                "alignment_global": torch.randn(4, 32),
+                "penultimate_map_global": penultimate_map,
+            },
         )
         head = SigLIP2NativePoolerHead(
             input_dim=32,
@@ -153,15 +213,18 @@ class ModelingContractTest(unittest.TestCase):
             [32, 32, 32],
         )
         self.assertEqual(outputs.alignment_feature.shape, (4, 32))
+        self.assertIs(outputs.metric_features[0], penultimate_map)
 
     def test_multibranch_parity_head_matches_clip_loss_contract(self):
+        penultimate_map = torch.randn(4, 32)
         backbone_output = BackboneOutput(
             global_feature=torch.randn(4, 32),
             patch_features=torch.randn(4, 2, 32),
             pre_norm_global=torch.randn(4, 32),
             secondary_global=torch.randn(4, 32),
             auxiliary_features={
-                "alignment_global": torch.randn(4, 32)
+                "alignment_global": torch.randn(4, 32),
+                "penultimate_map_global": penultimate_map,
             },
         )
         head = MultiBranchParityHead(
@@ -180,6 +243,7 @@ class ModelingContractTest(unittest.TestCase):
         )
         self.assertEqual(outputs.alignment_feature.shape, (4, 32))
         self.assertEqual(head.alignment_dim, 32)
+        self.assertIs(outputs.metric_features[0], penultimate_map)
 
     def test_reid_model_and_objective_contract(self):
         images = torch.randn(4, 3, 32, 16)

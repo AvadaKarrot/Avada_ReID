@@ -209,11 +209,14 @@ class MultiBranchParityHead(nn.Module):
                 "secondary_global backbone features"
             )
 
+        auxiliary = backbone_output.auxiliary_features or {}
+        metric_first_feature = auxiliary.get(
+            "penultimate_map_global", pre_norm_feature
+        )
         raw_feature = backbone_output.global_feature
         projected_feature = self.secondary_projection(secondary_feature)
         embedding = self.bnneck(raw_feature)
         projected_embedding = self.bnneck_proj(projected_feature)
-        auxiliary = backbone_output.auxiliary_features or {}
         alignment_feature = auxiliary.get("alignment_global")
 
         logits = None
@@ -240,7 +243,7 @@ class MultiBranchParityHead(nn.Module):
             if logits is not None
             else None,
             metric_features=(
-                pre_norm_feature,
+                metric_first_feature,
                 raw_feature,
                 projected_feature,
             ),
@@ -290,6 +293,10 @@ class SigLIP2NativePoolerHead(nn.Module):
                 "secondary_global"
             )
 
+        auxiliary = backbone_output.auxiliary_features or {}
+        metric_first_feature = auxiliary.get(
+            "penultimate_map_global", pre_norm_feature
+        )
         raw_feature = backbone_output.global_feature
         embedding = self.bnneck(raw_feature)
         pooler_embedding = self.bnneck_pooler(pooler_feature)
@@ -308,13 +315,16 @@ class SigLIP2NativePoolerHead(nn.Module):
                 (raw_feature, pooler_feature), dim=1
             )
 
-        auxiliary = backbone_output.auxiliary_features or {}
         return ReIDOutput(
             embedding=evaluation_embedding,
             raw_feature=raw_feature,
             logits=logits,
             patch_features=backbone_output.patch_features,
             id_logits=(logits, pooler_logits) if logits is not None else None,
-            metric_features=(pre_norm_feature, raw_feature, pooler_feature),
+            metric_features=(
+                metric_first_feature,
+                raw_feature,
+                pooler_feature,
+            ),
             alignment_feature=auxiliary.get("alignment_global", pooler_feature),
         )
