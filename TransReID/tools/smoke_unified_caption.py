@@ -16,6 +16,7 @@ if str(PROJECT_DIR) not in sys.path:
 from config import cfg
 from data.build import build_datamanager
 from engine import Trainer, normalize_batch
+from engine.batch import move_to_device
 from modeling import build_model
 from objectives import build_caption_objective, build_objective
 from optim import build_optimizer
@@ -83,13 +84,13 @@ def main():
     model.eval()
     with torch.no_grad():
         target_outputs = model(
-            target_batch["images"].to(trainer.device)
+            move_to_device(target_batch["images"], trainer.device)
         )
 
     print(
         json.dumps(
             {
-                "source_batch": int(source_named["images"].shape[0]),
+                "source_batch": int(source_named["pids"].shape[0]),
                 "caption_enabled": caption_enabled,
                 "head": type(model.head).__name__,
                 "metric_feature_dims": list(model.head.metric_dims),
@@ -110,7 +111,7 @@ def main():
                     name: float(value.item())
                     for name, value in losses.items()
                 },
-                "target_batch": int(target_batch["images"].shape[0]),
+                "target_batch": int(target_batch["pids"].shape[0]),
                 "target_embedding_shape": list(
                     target_outputs.embedding.shape
                 ),
