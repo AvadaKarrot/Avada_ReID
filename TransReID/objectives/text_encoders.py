@@ -112,7 +112,11 @@ class SigLIP2TextEncoder(nn.Module):
                     "tokenizer are injected"
                 )
             try:
-                from transformers import Siglip2Tokenizer, SiglipTextModel
+                from transformers import (
+                    Siglip2TextModel,
+                    Siglip2Tokenizer,
+                    SiglipTextModel,
+                )
             except ImportError as exc:
                 raise ImportError(
                     "SigLIP2 text alignment requires transformers"
@@ -122,7 +126,12 @@ class SigLIP2TextEncoder(nn.Module):
                 # configuration, while using the SigLIP2 tokenizer/vocabulary.
                 # Loading Siglip2TextModel against that full checkpoint uses
                 # an incompatible model contract in recent Transformers.
-                text_model = SiglipTextModel.from_pretrained(model_name)
+                text_model_cls = (
+                    Siglip2TextModel
+                    if "naflex" in str(model_name).lower()
+                    else SiglipTextModel
+                )
+                text_model = text_model_cls.from_pretrained(model_name)
             if tokenizer is None:
                 # Use the explicit class so the training contract does not
                 # depend on tokenizer_class metadata from a Hub revision.

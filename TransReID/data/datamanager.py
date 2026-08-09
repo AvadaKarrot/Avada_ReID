@@ -3,10 +3,15 @@ import copy
 import torch
 
 from data.caption_store import CaptionStore
-from data.collate import caption_collate_fn, collate_fn, val_collate_fn
+from data.collate import (
+    NaFlexCollator,
+    caption_collate_fn,
+    collate_fn,
+    val_collate_fn,
+)
 from data.sampler import build_train_sampler
 from data.datasets import init_image_dataset, init_video_dataset
-from data.transforms import build_transforms
+from data.transforms import build_naflex_transforms, build_transforms
 
 class DataManager(object):
     r"""Base data manager.
@@ -34,6 +39,7 @@ class DataManager(object):
         norm_mean=None,
         norm_std=None,
         use_gpu=False,
+        flip_prob=0.5,
         randomerase_prob=0.5,
         padding =10,
         sobel_prob = 0.8,
@@ -41,6 +47,9 @@ class DataManager(object):
         caption_file='',
         caption_selection='random',
         caption_missing_policy='error',
+        naflex=False,
+        naflex_model_name='',
+        naflex_max_num_patches=128,
     ):
         self.sources = sources
         self.targets = targets
@@ -50,6 +59,9 @@ class DataManager(object):
         self.caption_file = caption_file
         self.caption_selection = caption_selection
         self.caption_missing_policy = caption_missing_policy
+        self.naflex = bool(naflex)
+        self.naflex_model_name = naflex_model_name
+        self.naflex_max_num_patches = int(naflex_max_num_patches)
 
         if self.sources is None:
             raise ValueError('sources must not be None')
@@ -66,16 +78,41 @@ class DataManager(object):
             self.targets = [
                 name.strip() for name in self.targets.split(',') if name.strip()
             ]
-        self.transform_tr, self.transform_te = build_transforms(
-            self.height,
-            self.width,
-            transforms=transforms,
-            norm_mean=norm_mean,
-            norm_std=norm_std,
-            randomerase_prob=randomerase_prob,
-            padding=padding,
-            sobel_prob=sobel_prob,
-        )
+        if self.naflex:
+            if not self.naflex_model_name:
+                raise ValueError(
+                    'naflex_model_name is required for SigLIP2 NaFlex data'
+                )
+            self.transform_tr, self.transform_te = build_naflex_transforms(
+                transforms=transforms,
+                flip_prob=flip_prob,
+            )
+            self.naflex_train_collate = NaFlexCollator.from_pretrained(
+                self.naflex_model_name,
+                max_num_patches=self.naflex_max_num_patches,
+                caption=caption,
+            )
+            self.naflex_eval_collate = NaFlexCollator.from_pretrained(
+                self.naflex_model_name,
+                max_num_patches=self.naflex_max_num_patches,
+                caption=False,
+            )
+            self.naflex_source_eval_collate = (
+                self.naflex_train_collate
+                if caption
+                else self.naflex_eval_collate
+            )
+        else:
+            self.transform_tr, self.transform_te = build_transforms(
+                self.height,
+                self.width,
+                transforms=transforms,
+                norm_mean=norm_mean,
+                norm_std=norm_std,
+                randomerase_prob=randomerase_prob,
+                padding=padding,
+                sobel_prob=sobel_prob,
+            )
 
         self.use_gpu = (torch.cuda.is_available() and use_gpu)
 
@@ -253,6 +290,7 @@ class ImageDataManager(DataManager):
         norm_mean=None,
         norm_std=None,
         use_gpu=True,
+        flip_prob=0.5,
         split_id=0,
         combineall=False,
         load_train_targets=False,
@@ -275,6 +313,9 @@ class ImageDataManager(DataManager):
         caption_file='',
         caption_selection='random',
         caption_missing_policy='error',
+        naflex=False,
+        naflex_model_name='',
+        naflex_max_num_patches=128,
         cap_num=None,
     ):
         super(ImageDataManager, self).__init__(
@@ -286,6 +327,7 @@ class ImageDataManager(DataManager):
             norm_mean=norm_mean,
             norm_std=norm_std,
             use_gpu=use_gpu,
+            flip_prob=flip_prob,
             randomerase_prob = randomerase_prob,
             padding = padding,
             sobel_prob=sobel_prob,
@@ -293,6 +335,9 @@ class ImageDataManager(DataManager):
             caption_file=caption_file,
             caption_selection=caption_selection,
             caption_missing_policy=caption_missing_policy,
+            naflex=naflex,
+            naflex_model_name=naflex_model_name,
+            naflex_max_num_patches=naflex_max_num_patches,
         )
         dataset_options = {
             'root': root,
@@ -361,7 +406,11 @@ class ImageDataManager(DataManager):
         train_loader_options = {
             'dataset': trainset,
             'num_workers': workers,
-            'collate_fn': caption_collate_fn if caption else collate_fn,
+            'collate_fn': (
+                self.naflex_train_collate
+                if self.naflex
+                else (caption_collate_fn if caption else collate_fn)
+            ),
             'pin_memory': self.use_gpu,
         }
         if dist_train:
@@ -412,7 +461,10 @@ class ImageDataManager(DataManager):
                 shuffle=False,
                 num_workers=workers,
                 pin_memory=self.use_gpu,
-                drop_last=False
+                drop_last=False,
+                collate_fn=(
+                    self.naflex_eval_collate if self.naflex else collate_fn
+                ),
             )
 
         print('=> Loading test (target) dataset')
@@ -431,7 +483,9 @@ class ImageDataManager(DataManager):
             for name in self.targets
         }
 
-        eval_collate_fn = val_collate_fn
+        eval_collate_fn = (
+            self.naflex_eval_collate if self.naflex else val_collate_fn
+        )
         self._source_eval_loader = None
         self._source_eval_dataset = None
         self._source_eval_loader_options = {
@@ -439,7 +493,9 @@ class ImageDataManager(DataManager):
             'shuffle': False,
             'num_workers': workers,
             'collate_fn': (
-                caption_collate_fn if caption else val_collate_fn
+                self.naflex_source_eval_collate
+                if self.naflex
+                else (caption_collate_fn if caption else val_collate_fn)
             ),
             'pin_memory': self.use_gpu,
             'drop_last': False,

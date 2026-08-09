@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 
-from .batch import normalize_batch
+from .batch import move_to_device, normalize_batch
 from .checkpoint import (
     TrainingCheckpointer,
     TrainingState,
@@ -63,7 +63,9 @@ class Trainer:
 
     def train_step(self, raw_batch):
         batch = normalize_batch(raw_batch)
-        images = batch["images"].to(self.device, non_blocking=True)
+        images = move_to_device(
+            batch["images"], self.device, non_blocking=True
+        )
         batch["pids"] = batch["pids"].to(
             self.device, non_blocking=True
         )

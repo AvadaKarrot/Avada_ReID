@@ -3,6 +3,26 @@ from typing import Any, Dict
 import torch
 
 
+def move_to_device(value: Any, device, non_blocking=False):
+    """Move tensors in a nested visual-input contract to one device."""
+    if torch.is_tensor(value):
+        return value.to(device, non_blocking=non_blocking)
+    if isinstance(value, dict):
+        return {
+            name: move_to_device(item, device, non_blocking)
+            for name, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(
+            move_to_device(item, device, non_blocking) for item in value
+        )
+    if isinstance(value, list):
+        return [
+            move_to_device(item, device, non_blocking) for item in value
+        ]
+    return value
+
+
 def normalize_batch(batch: Any) -> Dict[str, Any]:
     """Convert legacy tuples to the new named batch contract.
 

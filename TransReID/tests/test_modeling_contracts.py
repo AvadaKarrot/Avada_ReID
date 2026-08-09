@@ -9,6 +9,7 @@ from modeling.backbones.dinov3 import DINOv3Adapter
 from modeling.backbones.siglip2 import (
     MAPHead,
     SigLIP2Adapter,
+    SigLIP2NaFlexAdapter,
     resize_siglip2_position_embedding,
 )
 from modeling.heads import (
@@ -133,6 +134,67 @@ class ModelingContractTest(unittest.TestCase):
         pooled.sum().backward()
         self.assertIsNotNone(tokens.grad)
         self.assertIsNotNone(pooler.probe.grad)
+
+    def test_map_head_excludes_padding_tokens(self):
+        torch.manual_seed(7)
+        pooler = MAPHead(hidden_size=8, num_heads=2).eval()
+        valid = torch.randn(1, 2, 8)
+        first = torch.cat((valid, torch.full((1, 2, 8), 1000.0)), dim=1)
+        second = torch.cat((valid, torch.full((1, 2, 8), -1000.0)), dim=1)
+        mask = torch.tensor([[True, True, False, False]])
+
+        torch.testing.assert_close(
+            pooler(first, mask),
+            pooler(second, mask),
+        )
+
+    def test_siglip2_naflex_adapter_preserves_mask_contract(self):
+        try:
+            from transformers import Siglip2VisionConfig, Siglip2VisionModel
+        except ImportError:
+            self.skipTest("installed transformers has no NaFlex SigLIP2")
+        config = Siglip2VisionConfig(
+            hidden_size=8,
+            intermediate_size=16,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            patch_size=2,
+            num_patches=4,
+        )
+        adapter = SigLIP2NaFlexAdapter(
+            encoder=Siglip2VisionModel(config),
+            penultimate_map_pooler=True,
+        )
+        image_inputs = {
+            "pixel_values": torch.randn(2, 4, 12),
+            "pixel_attention_mask": torch.tensor(
+                [[1, 1, 0, 0], [1, 1, 1, 1]]
+            ),
+            "spatial_shapes": torch.tensor([[2, 1], [2, 2]]),
+        }
+
+        output = adapter(image_inputs)
+
+        self.assertEqual(output.global_feature.shape, (2, 8))
+        self.assertEqual(output.patch_features.shape, (2, 4, 8))
+        self.assertEqual(output.secondary_global.shape, (2, 8))
+        self.assertIsNone(output.spatial_shape)
+        self.assertTrue(
+            torch.equal(
+                output.auxiliary_features["patch_attention_mask"],
+                image_inputs["pixel_attention_mask"].bool(),
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                output.auxiliary_features["spatial_shapes"],
+                image_inputs["spatial_shapes"],
+            )
+        )
+        self.assertEqual(
+            output.auxiliary_features["penultimate_map_global"].shape,
+            (2, 8),
+        )
 
     def test_siglip2_adapter_requires_pretrained_final_pooler(self):
         images = torch.randn(2, 3, 32, 16)

@@ -1,5 +1,5 @@
 import copy
-from typing import Optional
+from typing import Mapping, Optional
 
 import torch
 from torch import nn
@@ -129,7 +129,11 @@ class MAPHead(nn.Module):
                 nn.init.xavier_uniform_(module.weight)
                 nn.init.normal_(module.bias, std=1e-6)
 
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         if tokens.ndim != 3:
             raise ValueError(
                 f"MAPHead expects tokens shaped [B, N, D], got {tokens.shape}"
@@ -139,8 +143,23 @@ class MAPHead(nn.Module):
                 "MAPHead token dimension does not match hidden_size: "
                 f"got {tokens.shape[-1]}, expected {self.hidden_size}"
             )
+        key_padding_mask = None
+        if attention_mask is not None:
+            if attention_mask.shape != tokens.shape[:2]:
+                raise ValueError(
+                    "MAPHead attention mask must match [B, N]: "
+                    f"got {tuple(attention_mask.shape)}, expected "
+                    f"{tuple(tokens.shape[:2])}"
+                )
+            key_padding_mask = ~attention_mask.to(dtype=torch.bool)
         probe = self.probe.expand(tokens.shape[0], -1, -1)
-        pooled = self.attention(probe, tokens, tokens, need_weights=False)[0]
+        pooled = self.attention(
+            probe,
+            tokens,
+            tokens,
+            key_padding_mask=key_padding_mask,
+            need_weights=False,
+        )[0]
         pooled = pooled + self.mlp(self.layernorm(pooled))
         return pooled[:, 0]
 
@@ -326,6 +345,169 @@ class SigLIP2Adapter(BackboneAdapter):
             patch_features=tokens,
             spatial_shape=spatial_shape,
             pre_norm_global=pre_norm_tokens.mean(dim=1),
+            secondary_global=pooled,
+            auxiliary_features=auxiliary_features,
+        )
+
+
+def _masked_token_mean(tokens, attention_mask):
+    if attention_mask.shape != tokens.shape[:2]:
+        raise ValueError(
+            "Patch attention mask must match token dimensions: "
+            f"got {tuple(attention_mask.shape)}, expected "
+            f"{tuple(tokens.shape[:2])}"
+        )
+    weights = attention_mask.to(device=tokens.device, dtype=tokens.dtype)
+    denominator = weights.sum(dim=1, keepdim=True).clamp_min(1.0)
+    return (tokens * weights.unsqueeze(-1)).sum(dim=1) / denominator
+
+
+@register_backbone("siglip2_base_patch16_naflex")
+class SigLIP2NaFlexAdapter(BackboneAdapter):
+    """Official SigLIP2 NaFlex visual contract with mask-aware pooling."""
+
+    output_dim = 768
+    secondary_dim = 768
+
+    def __init__(
+        self,
+        model_name: str = "google/siglip2-base-patch16-naflex",
+        encoder: Optional[nn.Module] = None,
+        penultimate_map_pooler: bool = False,
+    ):
+        super().__init__()
+        if encoder is None:
+            try:
+                from transformers import Siglip2VisionModel
+            except ImportError as exc:
+                raise ImportError(
+                    "SigLIP2 NaFlex requires a Transformers release with "
+                    "Siglip2VisionModel"
+                ) from exc
+            encoder = Siglip2VisionModel.from_pretrained(model_name)
+
+        self.encoder = encoder
+        self.output_dim = int(
+            getattr(encoder.config, "hidden_size", self.output_dim)
+        )
+        self.secondary_dim = self.output_dim
+        self.penultimate_map_pooler_enabled = bool(penultimate_map_pooler)
+        self.penultimate_post_layernorm = None
+        self.penultimate_map_head = None
+        if self.penultimate_map_pooler_enabled:
+            vision_tower = getattr(self.encoder, "vision_model", self.encoder)
+            post_layernorm = getattr(vision_tower, "post_layernorm", None)
+            native_map_head = getattr(vision_tower, "head", None)
+            if not isinstance(native_map_head, nn.Module):
+                raise RuntimeError(
+                    "NaFlex penultimate MAP requires the checkpoint's native "
+                    "mask-aware MAP head"
+                )
+            if isinstance(post_layernorm, nn.Module):
+                self.penultimate_post_layernorm = copy.deepcopy(post_layernorm)
+            else:
+                self.penultimate_post_layernorm = nn.LayerNorm(
+                    self.output_dim,
+                    eps=float(getattr(encoder.config, "layer_norm_eps", 1e-6)),
+                )
+            self.penultimate_map_head = copy.deepcopy(native_map_head)
+
+    @staticmethod
+    def _validate_inputs(image_inputs):
+        if not isinstance(image_inputs, Mapping):
+            raise TypeError(
+                "SigLIP2 NaFlex expects a mapping containing pixel_values, "
+                "pixel_attention_mask and spatial_shapes"
+            )
+        required = {
+            "pixel_values",
+            "pixel_attention_mask",
+            "spatial_shapes",
+        }
+        missing = required.difference(image_inputs)
+        if missing:
+            raise KeyError(
+                f"NaFlex visual inputs are missing {sorted(missing)}"
+            )
+        pixel_values = image_inputs["pixel_values"]
+        attention_mask = image_inputs["pixel_attention_mask"]
+        spatial_shapes = image_inputs["spatial_shapes"]
+        if pixel_values.ndim != 3:
+            raise ValueError(
+                "NaFlex pixel_values must be [B, N, patch_dim], got "
+                f"{tuple(pixel_values.shape)}"
+            )
+        if attention_mask.shape != pixel_values.shape[:2]:
+            raise ValueError(
+                "NaFlex pixel_attention_mask must match [B, N]"
+            )
+        if spatial_shapes.shape != (pixel_values.shape[0], 2):
+            raise ValueError(
+                "NaFlex spatial_shapes must be [B, 2], got "
+                f"{tuple(spatial_shapes.shape)}"
+            )
+        return pixel_values, attention_mask, spatial_shapes
+
+    def forward_features(self, image_inputs: Mapping[str, torch.Tensor]):
+        pixel_values, attention_mask, spatial_shapes = self._validate_inputs(
+            image_inputs
+        )
+        attention_mask = attention_mask.to(dtype=torch.bool)
+
+        pre_norm = []
+        vision_tower = getattr(self.encoder, "vision_model", self.encoder)
+        post_layernorm = getattr(vision_tower, "post_layernorm", None)
+        hook = None
+        if post_layernorm is not None:
+            hook = post_layernorm.register_forward_pre_hook(
+                lambda _module, inputs: pre_norm.append(inputs[0])
+            )
+        try:
+            outputs = self.encoder(
+                pixel_values=pixel_values,
+                pixel_attention_mask=attention_mask,
+                spatial_shapes=spatial_shapes,
+                output_hidden_states=self.penultimate_map_pooler_enabled,
+            )
+        finally:
+            if hook is not None:
+                hook.remove()
+
+        tokens = outputs.last_hidden_state
+        pooled = getattr(outputs, "pooler_output", None)
+        if pooled is None:
+            raise RuntimeError(
+                "SigLIP2 NaFlex checkpoint returned no native MAP output"
+            )
+        pre_norm_tokens = pre_norm[0] if pre_norm else tokens
+        auxiliary_features = {
+            "alignment_global": pooled,
+            "patch_attention_mask": attention_mask,
+            "spatial_shapes": spatial_shapes,
+        }
+        if self.penultimate_map_pooler_enabled:
+            hidden_states = getattr(outputs, "hidden_states", None)
+            if hidden_states is None or len(hidden_states) < 3:
+                raise RuntimeError(
+                    "NaFlex encoder did not return penultimate hidden states"
+                )
+            penultimate_tokens = self.penultimate_post_layernorm(
+                hidden_states[-2]
+            )
+            auxiliary_features["penultimate_map_global"] = (
+                self.penultimate_map_head(
+                    penultimate_tokens,
+                    attention_mask,
+                )
+            )
+
+        return BackboneOutput(
+            global_feature=_masked_token_mean(tokens, attention_mask),
+            patch_features=tokens,
+            spatial_shape=None,
+            pre_norm_global=_masked_token_mean(
+                pre_norm_tokens, attention_mask
+            ),
             secondary_global=pooled,
             auxiliary_features=auxiliary_features,
         )

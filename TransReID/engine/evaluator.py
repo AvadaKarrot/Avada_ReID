@@ -3,7 +3,7 @@ from typing import Mapping
 
 import torch
 
-from .batch import normalize_batch
+from .batch import move_to_device, normalize_batch
 
 try:
     from utils.metrics import R1_mAP_eval
@@ -31,7 +31,7 @@ class Evaluator:
 
         for raw_batch in loader:
             batch = normalize_batch(raw_batch)
-            images = batch["images"].to(self.device)
+            images = move_to_device(batch["images"], self.device)
             outputs = model(images)
             metric.update(
                 (

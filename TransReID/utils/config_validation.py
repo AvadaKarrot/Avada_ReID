@@ -24,12 +24,15 @@ def validate_training_config(current_cfg):
                 )
             ).lower()
             if not (
-                backbone_name == "siglip2_base_patch16"
+                backbone_name in {
+                    "siglip2_base_patch16",
+                    "siglip2_base_patch16_naflex",
+                }
                 and text_encoder == "siglip2_native"
             ):
                 raise ValueError(
                     "multibranch_parity Caption alignment is supported only "
-                    "for siglip2_base_patch16 with siglip2_native; its "
+                    "for a SigLIP2 backbone with siglip2_native; its "
                     "512-D ReID projection is never an alignment space"
                 )
         if not current_cfg.OBJECTIVE.CAPTION.FILE:
@@ -74,3 +77,19 @@ def validate_training_config(current_cfg):
             "Unified image batches do not provide view labels; "
             "set MODEL.SIE_VIEW=False"
         )
+    if backbone_name == "siglip2_base_patch16_naflex":
+        if bool(
+            getattr(
+                current_cfg.MODEL.BACKBONE,
+                "STATIC_POSITION_EMBEDDING",
+                False,
+            )
+        ):
+            raise ValueError(
+                "SigLIP2 NaFlex must use its native spatial-shape position "
+                "contract, not STATIC_POSITION_EMBEDDING"
+            )
+        if int(current_cfg.MODEL.BACKBONE.NAFLEX_MAX_NUM_PATCHES) <= 0:
+            raise ValueError(
+                "MODEL.BACKBONE.NAFLEX_MAX_NUM_PATCHES must be positive"
+            )

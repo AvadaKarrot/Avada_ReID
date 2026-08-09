@@ -27,6 +27,7 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
             "ViT-B-16": "clip_vit_b16",
             "dinov3_vit_b16": "dinov3_vit_b16",
             "siglip2_base_patch16": "siglip2_base_patch16",
+            "siglip2_base_patch16_naflex": "siglip2_base_patch16_naflex",
         }
         backbone_name = aliases.get(legacy_name, legacy_name)
 
@@ -54,9 +55,12 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
             )
         head = None
     elif head_type == "siglip2_native_pooler":
-        if backbone_name != "siglip2_base_patch16":
+        if backbone_name not in {
+            "siglip2_base_patch16",
+            "siglip2_base_patch16_naflex",
+        }:
             raise ValueError(
-                "siglip2_native_pooler requires siglip2_base_patch16"
+                "siglip2_native_pooler requires a SigLIP2 backbone"
             )
         head = None
     elif head_type != "standard":
@@ -80,6 +84,21 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
             )
         )
         kwargs["target_image_size"] = tuple(cfg.INPUT.SIZE_TRAIN)
+    elif backbone_name == "siglip2_base_patch16_naflex":
+        if bool(
+            _getattr_path(
+                cfg, "MODEL.BACKBONE.STATIC_POSITION_EMBEDDING", False
+            )
+        ):
+            raise ValueError(
+                "NaFlex uses its native spatial-shape contract; disable "
+                "STATIC_POSITION_EMBEDDING"
+            )
+        kwargs["penultimate_map_pooler"] = bool(
+            _getattr_path(
+                cfg, "MODEL.BACKBONE.PENULTIMATE_MAP_POOLER", False
+            )
+        )
 
     backbone = build_backbone(backbone_name, **kwargs)
     if head is None and head_type == "multibranch_parity":

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 import torch
 from torch import nn
@@ -12,8 +13,8 @@ class BackboneAdapter(nn.Module, ABC):
     output_dim: int
 
     @abstractmethod
-    def forward_features(self, images: torch.Tensor) -> BackboneOutput:
+    def forward_features(self, images: Any) -> BackboneOutput:
         raise NotImplementedError
 
-    def forward(self, images: torch.Tensor) -> BackboneOutput:
+    def forward(self, images: Any) -> BackboneOutput:
         return self.forward_features(images)

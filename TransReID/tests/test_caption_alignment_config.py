@@ -37,6 +37,18 @@ SIGLIP2_CAPTION_CONFIG = (
     / "experiments"
     / "siglip2_multibranch_caption_alignment.yml"
 )
+SIGLIP2_NAFLEX_IMAGE_CONFIG = (
+    PROJECT_DIR
+    / "configs"
+    / "experiments"
+    / "siglip2_naflex_native_image_only.yml"
+)
+SIGLIP2_NAFLEX_CAPTION_CONFIG = (
+    PROJECT_DIR
+    / "configs"
+    / "experiments"
+    / "siglip2_naflex_native_caption_alignment.yml"
+)
 
 
 @unittest.skipIf(default_cfg is None, "yacs is not installed")
@@ -84,6 +96,37 @@ class CaptionAlignmentConfigTest(unittest.TestCase):
         self.assertEqual(caption.TEXT_ENCODER, "siglip2_native")
         self.assertFalse(caption.USE_PROJECTION)
         self.assertEqual(caption.PROJECTION_DIM, 768)
+
+    def test_siglip2_naflex_pair_differs_only_by_caption_and_output(self):
+        image_cfg = default_cfg.clone()
+        image_cfg.merge_from_file(str(SIGLIP2_NAFLEX_IMAGE_CONFIG))
+        caption_cfg = default_cfg.clone()
+        caption_cfg.merge_from_file(str(SIGLIP2_NAFLEX_CAPTION_CONFIG))
+        image_cfg.defrost()
+        caption_cfg.defrost()
+        image_cfg.OBJECTIVE.CAPTION = caption_cfg.OBJECTIVE.CAPTION
+        image_cfg.OUTPUT_DIR = caption_cfg.OUTPUT_DIR
+        self.assertEqual(image_cfg, caption_cfg)
+
+    def test_siglip2_naflex_config_uses_native_variable_shape_contract(self):
+        caption_cfg = default_cfg.clone()
+        caption_cfg.merge_from_file(str(SIGLIP2_NAFLEX_CAPTION_CONFIG))
+        validate_training_config(caption_cfg)
+        self.assertEqual(
+            caption_cfg.MODEL.BACKBONE.NAME,
+            "siglip2_base_patch16_naflex",
+        )
+        self.assertFalse(
+            caption_cfg.MODEL.BACKBONE.STATIC_POSITION_EMBEDDING
+        )
+        self.assertEqual(
+            caption_cfg.MODEL.BACKBONE.NAFLEX_MAX_NUM_PATCHES,
+            128,
+        )
+        self.assertEqual(
+            list(caption_cfg.DATASETS.TRANSFORMS),
+            ["random_flip", "color_jitter"],
+        )
 
 
 class CaptionAlignmentValidationTest(unittest.TestCase):

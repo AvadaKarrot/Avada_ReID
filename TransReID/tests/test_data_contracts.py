@@ -7,13 +7,52 @@ from pathlib import Path
 import torch
 
 from data.caption_store import CaptionStore
-from data.collate import caption_collate_fn
+from data.collate import NaFlexCollator, caption_collate_fn
 from data.datasets.image.cuhk03 import _rebase_split_paths
 from data.records import image_only_sample
 from engine.batch import normalize_batch
 
 
 class DataContractTest(unittest.TestCase):
+    def test_naflex_collate_keeps_mask_and_spatial_shape_with_metadata(self):
+        class FakeProcessor:
+            def __call__(self, images, return_tensors, max_num_patches):
+                self.images = images
+                self.return_tensors = return_tensors
+                self.max_num_patches = max_num_patches
+                return {
+                    "pixel_values": torch.randn(2, 4, 12),
+                    "pixel_attention_mask": torch.tensor(
+                        [[1, 1, 0, 0], [1, 1, 1, 1]]
+                    ),
+                    "spatial_shapes": torch.tensor([[2, 1], [2, 2]]),
+                }
+
+        processor = FakeProcessor()
+        collator = NaFlexCollator(
+            processor, max_num_patches=4, caption=True
+        )
+        batch = [
+            (object(), 1, 2, "a.jpg", 3, "red shirt"),
+            (object(), 4, 5, "b.jpg", 6, ""),
+        ]
+
+        collated = collator(batch)
+
+        self.assertEqual(processor.return_tensors, "pt")
+        self.assertEqual(processor.max_num_patches, 4)
+        self.assertEqual(
+            set(collated["images"]),
+            {"pixel_values", "pixel_attention_mask", "spatial_shapes"},
+        )
+        self.assertEqual(collated["images"]["pixel_values"].shape, (2, 4, 12))
+        self.assertTrue(
+            torch.equal(
+                collated["caption_mask"], torch.tensor([True, False])
+            )
+        )
+        self.assertEqual(collated["dataset_ids"], (3, 6))
+
     def test_cuhk03_split_paths_are_rebased_to_active_dataset_root(self):
         records = [
             ("/old/machine/cuhk03/images_detected/1_001_1_01.png", 7, 0)

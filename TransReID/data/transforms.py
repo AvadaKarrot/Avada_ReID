@@ -340,3 +340,41 @@ def build_transforms(
         normalize,
     ])
     return transform_tr, transform_te
+
+
+def build_naflex_transforms(
+    transforms='random_flip',
+    flip_prob=0.5,
+    **_,
+):
+    """Build PIL-only augmentations for SigLIP2 NaFlex.
+
+    Resizing, conversion to tensors, padding and normalization belong to the
+    official NaFlex image processor because it must produce a patch sequence,
+    a padding mask and the per-image spatial grid together.  Applying the
+    regular ReID transform first would both distort the aspect ratio and
+    normalize the pixels twice.
+    """
+    if transforms is None:
+        transforms = []
+    if isinstance(transforms, str):
+        transforms = [transforms]
+    transforms = [name.lower() for name in transforms]
+
+    supported = {'random_flip', 'color_jitter'}
+    unsupported = sorted(set(transforms).difference(supported))
+    if unsupported:
+        raise ValueError(
+            "SigLIP2 NaFlex only supports PIL-space augmentations "
+            "['random_flip', 'color_jitter']; remove transforms that require "
+            f"a fixed tensor grid: {unsupported}"
+        )
+
+    train = []
+    if 'random_flip' in transforms:
+        train.append(T.RandomHorizontalFlip(p=float(flip_prob)))
+    if 'color_jitter' in transforms:
+        train.append(
+            T.ColorJitter(brightness=0.2, contrast=0.15, saturation=0, hue=0)
+        )
+    return T.Compose(train), T.Compose([])

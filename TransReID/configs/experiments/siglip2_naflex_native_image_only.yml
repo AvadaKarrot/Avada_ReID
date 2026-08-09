@@ -1,0 +1,71 @@
+MODEL:
+  DEVICE: "cuda"
+  DEVICE_ID: "'0'"
+  BACKBONE:
+    NAME: "siglip2_base_patch16_naflex"
+    PRETRAINED: True
+    PRETRAINED_NAME: "/root/autodl-tmp/pretrained/siglip2/siglip2-base-patch16-naflex"
+    STATIC_POSITION_EMBEDDING: False
+    PENULTIMATE_MAP_POOLER: False
+    NAFLEX_MAX_NUM_PATCHES: 128
+  HEAD:
+    TYPE: "siglip2_native_pooler"
+    EMBED_DIM: 768
+  ID_LOSS_WEIGHT: 1.0
+  TRIPLET_LOSS_WEIGHT: 1.0
+  CAPTION: False
+  SIE_CAMERA: False
+  SIE_VIEW: False
+
+OBJECTIVE:
+  LABEL_SMOOTHING: 0.1
+  CAPTION:
+    ENABLED: False
+    WEIGHT: 0.0
+
+INPUT:
+  SIZE_TRAIN: [256, 128]
+  SIZE_TEST: [256, 128]
+  PROB: 0.5
+  RE_PROB: 0.0
+  PADDING: 0
+
+DATASETS:
+  SOURCES: "market1501"
+  TARGETS: "msmt17"
+  ROOT_DIR: "/root/autodl-tmp/datasets"
+  COMBINEALL: False
+  TRANSFORMS: ["random_flip", "color_jitter"]
+
+DATALOADER:
+  SAMPLER: "RandomIdentitySampler"
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 8
+
+SOLVER:
+  IMS_PER_BATCH: 64
+  OPTIMIZER_NAME: "Adam"
+  MAX_EPOCHS: 30
+  BASE_LR: 0.000005
+  WARMUP_METHOD: "linear"
+  WARMUP_ITERS: 5
+  WARMUP_FACTOR: 0.1
+  WEIGHT_DECAY: 0.0001
+  WEIGHT_DECAY_BIAS: 0.0001
+  LARGE_FC_LR: False
+  BIAS_LR_FACTOR: 2
+  STEPS: [5, 20]
+  GAMMA: 0.1
+  CHECKPOINT_PERIOD: 5
+  EVAL_PERIOD: 5
+  LOG_PERIOD: 100
+  SEED: 1234
+  AMP_ENABLED: True
+  AMP_INIT_SCALE: 512.0
+
+TEST:
+  IMS_PER_BATCH: 128
+  FEAT_NORM: "yes"
+  NECK_FEAT: "before"
+
+OUTPUT_DIR: "/root/autodl-tmp/experiments/backbone_transfer/siglip2_naflex/m_to_ms/seed_1234"

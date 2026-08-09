@@ -22,6 +22,7 @@ def imagedata_kwargs(cfg):
         "train_sampler": cfg.DATALOADER.SAMPLER,
         "dist_train": cfg.MODEL.DIST_TRAIN,
         "randomerase_prob": cfg.INPUT.RE_PROB,
+        "flip_prob": cfg.INPUT.PROB,
         "padding": cfg.INPUT.PADDING,
         "sobel_prob": cfg.INPUT.SOBEL_PROB,
         "caption": caption_enabled,
@@ -30,6 +31,14 @@ def imagedata_kwargs(cfg):
         ),
         "caption_selection": cfg.OBJECTIVE.CAPTION.SELECTION,
         "caption_missing_policy": cfg.OBJECTIVE.CAPTION.MISSING_POLICY,
+        "naflex": (
+            str(cfg.MODEL.BACKBONE.NAME).lower()
+            == "siglip2_base_patch16_naflex"
+        ),
+        "naflex_model_name": cfg.MODEL.BACKBONE.PRETRAINED_NAME,
+        "naflex_max_num_patches": int(
+            getattr(cfg.MODEL.BACKBONE, "NAFLEX_MAX_NUM_PATCHES", 128)
+        ),
     }
 
 

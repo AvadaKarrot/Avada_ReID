@@ -5,6 +5,7 @@ from .registry import BACKBONE_REGISTRY, build_backbone, register_backbone
 from .siglip2 import (
     MAPHead,
     SigLIP2Adapter,
+    SigLIP2NaFlexAdapter,
     resize_siglip2_position_embedding,
 )
 
@@ -15,6 +16,7 @@ __all__ = [
     "DINOv3Adapter",
     "MAPHead",
     "SigLIP2Adapter",
+    "SigLIP2NaFlexAdapter",
     "resize_siglip2_position_embedding",
     "build_backbone",
     "register_backbone",
