@@ -1,0 +1,76 @@
+{
+  "protocol": "one-source-one-target",
+  "schedule": "S1_30ep_eval5_naflex_image_only",
+  "combineall": false,
+  "selection": {
+    "backbones": ["siglip2_naflex"],
+    "methods": ["image_only"]
+  },
+  "smoke_output_root": "/root/autodl-tmp/experiments/backbone_transfer_s1/smoke_siglip2_naflex_image_only",
+  "solver_overrides": {
+    "MAX_EPOCHS": 30,
+    "BASE_LR": 0.000005,
+    "WARMUP_ITERS": 5,
+    "WARMUP_FACTOR": 0.1,
+    "STEPS": [5, 20],
+    "GAMMA": 0.1,
+    "EVAL_PERIOD": 5,
+    "CHECKPOINT_PERIOD": 5
+  },
+  "runs": [
+    {
+      "name": "siglip2_naflex_ms_to_m_image_only_s1",
+      "backbone": "siglip2_naflex",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "source": "msmt17",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/ms_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_m_to_ms_image_only_s1",
+      "backbone": "siglip2_naflex",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "source": "market1501",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/m_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_ms_to_c3_image_only_s1",
+      "backbone": "siglip2_naflex",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "source": "msmt17",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/ms_to_c3/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_c3_to_ms_image_only_s1",
+      "backbone": "siglip2_naflex",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "source": "cuhk03",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/c3_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_c3_to_m_image_only_s1",
+      "backbone": "siglip2_naflex",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "source": "cuhk03",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/c3_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_m_to_c3_image_only_s1",
+      "backbone": "siglip2_naflex",
+      "method": "image_only",
+      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "source": "market1501",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/m_to_c3/seed_1234"
+    }
+  ]
+}

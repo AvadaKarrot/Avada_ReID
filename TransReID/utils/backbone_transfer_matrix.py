@@ -23,7 +23,15 @@ BACKBONE_METHOD_CONFIGS = {
         "caption_alignment":
             "configs/experiments/siglip2_multibranch_caption_alignment.yml",
     },
+    "siglip2_naflex": {
+        "image_only":
+            "configs/experiments/siglip2_naflex_native_image_only.yml",
+        "caption_alignment":
+            "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+    },
 }
+
+DEFAULT_SELECTED_BACKBONES = {"clip", "dinov3", "siglip2"}
 
 # Compatibility alias for callers that only need the backbone names.
 BACKBONE_CONFIGS = {
@@ -79,7 +87,7 @@ def validate_backbone_transfer_matrix(matrix):
             f"Unsupported transfer selection: {sorted(unknown_selection)}"
         )
     selected_backbones = set(
-        selection.get("backbones", BACKBONE_METHOD_CONFIGS)
+        selection.get("backbones", DEFAULT_SELECTED_BACKBONES)
     )
     unknown_backbones = selected_backbones - set(BACKBONE_METHOD_CONFIGS)
     if unknown_backbones:

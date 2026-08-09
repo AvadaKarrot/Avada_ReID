@@ -4,6 +4,7 @@ from pathlib import Path
 from utils.backbone_transfer_matrix import (
     BACKBONE_CONFIGS,
     BACKBONE_METHOD_CONFIGS,
+    DEFAULT_SELECTED_BACKBONES,
     EXPECTED_DIRECTIONS,
     config_overrides,
     load_backbone_transfer_matrix,
@@ -22,6 +23,13 @@ SIGLIP2_FINAL_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH = (
     / "configs"
     / "experiments"
     / "siglip2_final_map_only_image_only_s1_30ep.json"
+)
+
+SIGLIP2_NAFLEX_IMAGE_ONLY_MATRIX_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "configs"
+    / "experiments"
+    / "siglip2_naflex_image_only_s1_30ep.json"
 )
 
 
@@ -44,8 +52,8 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         expected = {
             (source, target, backbone, method)
             for source, target in EXPECTED_DIRECTIONS
-            for backbone, methods in BACKBONE_METHOD_CONFIGS.items()
-            for method in methods
+            for backbone in DEFAULT_SELECTED_BACKBONES
+            for method in BACKBONE_METHOD_CONFIGS[backbone]
         }
         self.assertEqual(observed, expected)
 
@@ -85,6 +93,23 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         self.assertIn("MODEL.HEAD.TYPE siglip2_native_pooler", joined)
         self.assertIn("MODEL.BACKBONE.STATIC_POSITION_EMBEDDING True", joined)
         self.assertIn("MODEL.BACKBONE.PENULTIMATE_MAP_POOLER False", joined)
+
+    def test_siglip2_naflex_image_only_scoped_matrix(self):
+        matrix = load_backbone_transfer_matrix(
+            SIGLIP2_NAFLEX_IMAGE_ONLY_MATRIX_PATH
+        )
+        self.assertEqual(len(matrix["runs"]), 6)
+        self.assertEqual(
+            {(run["source"], run["target"]) for run in matrix["runs"]},
+            EXPECTED_DIRECTIONS,
+        )
+        self.assertEqual(
+            {(run["backbone"], run["method"]) for run in matrix["runs"]},
+            {("siglip2_naflex", "image_only")},
+        )
+        overrides = config_overrides(matrix, matrix["runs"][0])
+        joined = " ".join(overrides)
+        self.assertIn("DATASETS.COMBINEALL False", joined)
 
 
 if __name__ == "__main__":
