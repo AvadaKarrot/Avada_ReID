@@ -42,20 +42,27 @@ MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30 = (
     / "experiments"
     / "protocol2_siglip2_penultimate_native_30ep.json"
 )
+MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30 = (
+    PROJECT_DIR
+    / "configs"
+    / "experiments"
+    / "protocol2_siglip2_naflex_image_only_30ep.json"
+)
 
 
 class Protocol2MatrixStructureTest(unittest.TestCase):
     def test_complete_matrix_loads(self):
-        for path in (
-            MATRIX_PATH_60,
-            MATRIX_PATH_30,
-            MATRIX_PATH_SIGLIP2_30,
-            MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30,
-            MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30,
+        for path, expected_runs in (
+            (MATRIX_PATH_60, 6),
+            (MATRIX_PATH_30, 6),
+            (MATRIX_PATH_SIGLIP2_30, 6),
+            (MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30, 6),
+            (MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30, 6),
+            (MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30, 3),
         ):
             matrix = load_protocol2_matrix(path)
             self.assertFalse(matrix["combineall"])
-            self.assertEqual(len(matrix["runs"]), 6)
+            self.assertEqual(len(matrix["runs"]), expected_runs)
 
 
 @unittest.skipIf(default_cfg is None, "yacs is not installed")
@@ -68,6 +75,7 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30),
+            load_protocol2_matrix(MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30),
         ]
 
     def _resolve(self, matrix, run):
@@ -86,6 +94,9 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
                 )
 
             for configs in grouped.values():
+                if set(configs) != {"image_only", "caption_alignment"}:
+                    self.assertEqual(set(configs), {"image_only"})
+                    continue
                 image = configs["image_only"].clone()
                 caption = configs["caption_alignment"].clone()
                 image.defrost()
@@ -182,6 +193,26 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
                 current.MODEL.HEAD.TYPE, "siglip2_native_pooler"
             )
             self.assertTrue(current.MODEL.BACKBONE.PENULTIMATE_MAP_POOLER)
+
+    def test_siglip2_naflex_image_only_matrix_uses_variable_shape_contract(self):
+        matrix = load_protocol2_matrix(
+            MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30
+        )
+        self.assertEqual(matrix["backbone"], "siglip2_naflex")
+        self.assertEqual(set(matrix["method_configs"]), {"image_only"})
+        self.assertEqual(len(matrix["runs"]), 3)
+        for run in matrix["runs"]:
+            current = self._resolve(matrix, run)
+            self.assertEqual(
+                current.MODEL.BACKBONE.NAME,
+                "siglip2_base_patch16_naflex",
+            )
+            self.assertFalse(current.MODEL.BACKBONE.STATIC_POSITION_EMBEDDING)
+            self.assertFalse(current.MODEL.CAPTION)
+            self.assertFalse(current.OBJECTIVE.CAPTION.ENABLED)
+            self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
+            self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
+            self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
 
 
 if __name__ == "__main__":

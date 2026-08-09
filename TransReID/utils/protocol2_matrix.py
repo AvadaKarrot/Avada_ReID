@@ -81,10 +81,13 @@ def validate_protocol2_matrix(matrix):
         )
 
     method_configs = matrix.get("method_configs", DEFAULT_METHOD_CONFIGS)
-    if set(method_configs) != {"image_only", "caption_alignment"}:
+    supported_methods = {"image_only", "caption_alignment"}
+    if not method_configs or not set(method_configs).issubset(
+        supported_methods
+    ):
         raise ValueError(
-            "Protocol-2 method_configs must define image_only and "
-            "caption_alignment"
+            "Protocol-2 method_configs must define a non-empty subset of "
+            "image_only and caption_alignment"
         )
     if any(
         not isinstance(path, str) or not path
@@ -93,8 +96,12 @@ def validate_protocol2_matrix(matrix):
         raise ValueError("Protocol-2 method config paths must be non-empty")
 
     runs = matrix.get("runs", [])
-    if len(runs) != 6:
-        raise ValueError("Protocol-2 matrix must contain six runs")
+    expected_run_count = len(EXPECTED_PROTOCOLS) * len(method_configs)
+    if len(runs) != expected_run_count:
+        raise ValueError(
+            "Protocol-2 matrix must contain "
+            f"{expected_run_count} runs for its declared methods"
+        )
     names = [run.get("name") for run in runs]
     outputs = [run.get("output_dir") for run in runs]
     if len(set(names)) != len(names):
@@ -121,7 +128,7 @@ def validate_protocol2_matrix(matrix):
         raise ValueError("Protocol-2 matrix is missing a source/target row")
     if any(methods != expected_methods for methods in observed.values()):
         raise ValueError(
-            "Every Protocol-2 row requires image-only and Caption runs"
+            "Every Protocol-2 row requires every declared method"
         )
 
 
