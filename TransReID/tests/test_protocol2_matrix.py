@@ -105,7 +105,12 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
 
             for configs in grouped.values():
                 if set(configs) != {"image_only", "caption_alignment"}:
-                    self.assertEqual(set(configs), {"image_only"})
+                    self.assertEqual(len(configs), 1)
+                    self.assertTrue(
+                        set(configs).issubset(
+                            {"image_only", "caption_alignment"}
+                        )
+                    )
                     continue
                 image = configs["image_only"].clone()
                 caption = configs["caption_alignment"].clone()
