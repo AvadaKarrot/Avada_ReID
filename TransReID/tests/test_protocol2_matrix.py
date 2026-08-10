@@ -48,6 +48,12 @@ MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30 = (
     / "experiments"
     / "protocol2_siglip2_naflex_image_only_30ep.json"
 )
+MATRIX_PATH_SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_30 = (
+    PROJECT_DIR
+    / "configs"
+    / "experiments"
+    / "protocol2_siglip2_naflex_caption_alignment_30ep.json"
+)
 
 
 class Protocol2MatrixStructureTest(unittest.TestCase):
@@ -59,6 +65,7 @@ class Protocol2MatrixStructureTest(unittest.TestCase):
             (MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30, 6),
             (MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30, 6),
             (MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30, 3),
+            (MATRIX_PATH_SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_30, 3),
         ):
             matrix = load_protocol2_matrix(path)
             self.assertFalse(matrix["combineall"])
@@ -76,6 +83,9 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_PARITY_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_PENULTIMATE_NATIVE_30),
             load_protocol2_matrix(MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30),
+            load_protocol2_matrix(
+                MATRIX_PATH_SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_30
+            ),
         ]
 
     def _resolve(self, matrix, run):
@@ -210,6 +220,33 @@ class Protocol2ResolvedConfigTest(unittest.TestCase):
             self.assertFalse(current.MODEL.BACKBONE.STATIC_POSITION_EMBEDDING)
             self.assertFalse(current.MODEL.CAPTION)
             self.assertFalse(current.OBJECTIVE.CAPTION.ENABLED)
+            self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
+            self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
+            self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
+
+    def test_siglip2_naflex_caption_matrix_uses_frozen_native_text(self):
+        matrix = load_protocol2_matrix(
+            MATRIX_PATH_SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_30
+        )
+        self.assertEqual(matrix["backbone"], "siglip2_naflex")
+        self.assertEqual(
+            set(matrix["method_configs"]), {"caption_alignment"}
+        )
+        self.assertEqual(len(matrix["runs"]), 3)
+        for run in matrix["runs"]:
+            current = self._resolve(matrix, run)
+            self.assertEqual(
+                current.MODEL.BACKBONE.NAME,
+                "siglip2_base_patch16_naflex",
+            )
+            self.assertTrue(current.OBJECTIVE.CAPTION.ENABLED)
+            self.assertEqual(
+                current.OBJECTIVE.CAPTION.TEXT_ENCODER, "siglip2_native"
+            )
+            self.assertFalse(current.OBJECTIVE.CAPTION.TEXT_TRAINABLE)
+            self.assertFalse(current.OBJECTIVE.CAPTION.USE_PROJECTION)
+            self.assertEqual(current.OBJECTIVE.CAPTION.PROJECTION_DIM, 768)
+            self.assertEqual(current.OBJECTIVE.CAPTION.POSITIVE_MODE, "pid")
             self.assertEqual(current.SOLVER.MAX_EPOCHS, 30)
             self.assertEqual(tuple(current.SOLVER.STEPS), (5, 20))
             self.assertEqual(current.SOLVER.EVAL_PERIOD, 5)
