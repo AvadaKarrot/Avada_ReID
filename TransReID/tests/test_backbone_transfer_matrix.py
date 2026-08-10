@@ -32,6 +32,13 @@ SIGLIP2_NAFLEX_IMAGE_ONLY_MATRIX_PATH = (
     / "siglip2_naflex_image_only_s1_30ep.json"
 )
 
+SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_MATRIX_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "configs"
+    / "experiments"
+    / "siglip2_naflex_caption_alignment_s1_30ep.json"
+)
+
 
 class BackboneTransferMatrixTest(unittest.TestCase):
     @classmethod
@@ -110,6 +117,28 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         overrides = config_overrides(matrix, matrix["runs"][0])
         joined = " ".join(overrides)
         self.assertIn("DATASETS.COMBINEALL False", joined)
+
+    def test_siglip2_naflex_caption_alignment_scoped_matrix(self):
+        matrix = load_backbone_transfer_matrix(
+            SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_MATRIX_PATH
+        )
+        self.assertEqual(len(matrix["runs"]), 6)
+        self.assertEqual(
+            {(run["source"], run["target"]) for run in matrix["runs"]},
+            EXPECTED_DIRECTIONS,
+        )
+        self.assertEqual(
+            {(run["backbone"], run["method"]) for run in matrix["runs"]},
+            {("siglip2_naflex", "caption_alignment")},
+        )
+        self.assertTrue(
+            all(
+                run["base_config"].endswith(
+                    "siglip2_naflex_native_caption_alignment.yml"
+                )
+                for run in matrix["runs"]
+            )
+        )
 
 
 if __name__ == "__main__":
