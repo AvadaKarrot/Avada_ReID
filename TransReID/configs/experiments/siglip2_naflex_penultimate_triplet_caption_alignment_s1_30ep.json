@@ -1,0 +1,79 @@
+{
+  "protocol": "one-source-one-target",
+  "schedule": "S1_30ep_eval5_naflex_caption_pid_nce_penultimate_triplet",
+  "combineall": false,
+  "selection": {
+    "backbones": ["siglip2_naflex"],
+    "methods": ["caption_alignment"]
+  },
+  "smoke_output_root": "/root/autodl-tmp/experiments/backbone_transfer_s1/smoke_siglip2_naflex_penultimate_triplet_caption_alignment",
+  "solver_overrides": {
+    "MAX_EPOCHS": 30,
+    "BASE_LR": 0.000005,
+    "WARMUP_ITERS": 5,
+    "WARMUP_FACTOR": 0.1,
+    "STEPS": [5, 20],
+    "GAMMA": 0.1,
+    "EVAL_PERIOD": 5,
+    "CHECKPOINT_PERIOD": 5
+  },
+  "model_overrides": {
+    "BACKBONE.PENULTIMATE_MAP_POOLER": true
+  },
+  "runs": [
+    {
+      "name": "siglip2_naflex_penultimate_triplet_ms_to_m_caption_alignment_s1",
+      "backbone": "siglip2_naflex",
+      "method": "caption_alignment",
+      "base_config": "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+      "source": "msmt17",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex_penultimate_triplet_caption_alignment/ms_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_penultimate_triplet_m_to_ms_caption_alignment_s1",
+      "backbone": "siglip2_naflex",
+      "method": "caption_alignment",
+      "base_config": "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+      "source": "market1501",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex_penultimate_triplet_caption_alignment/m_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_penultimate_triplet_ms_to_c3_caption_alignment_s1",
+      "backbone": "siglip2_naflex",
+      "method": "caption_alignment",
+      "base_config": "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+      "source": "msmt17",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex_penultimate_triplet_caption_alignment/ms_to_c3/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_penultimate_triplet_c3_to_ms_caption_alignment_s1",
+      "backbone": "siglip2_naflex",
+      "method": "caption_alignment",
+      "base_config": "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+      "source": "cuhk03",
+      "target": "msmt17",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex_penultimate_triplet_caption_alignment/c3_to_ms/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_penultimate_triplet_c3_to_m_caption_alignment_s1",
+      "backbone": "siglip2_naflex",
+      "method": "caption_alignment",
+      "base_config": "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+      "source": "cuhk03",
+      "target": "market1501",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex_penultimate_triplet_caption_alignment/c3_to_m/seed_1234"
+    },
+    {
+      "name": "siglip2_naflex_penultimate_triplet_m_to_c3_caption_alignment_s1",
+      "backbone": "siglip2_naflex",
+      "method": "caption_alignment",
+      "base_config": "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+      "source": "market1501",
+      "target": "cuhk03",
+      "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex_penultimate_triplet_caption_alignment/m_to_c3/seed_1234"
+    }
+  ]
+}

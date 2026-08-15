@@ -113,6 +113,11 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
             neck_feature=str(_getattr_path(cfg, "TEST.NECK_FEAT", "before")),
         )
     elif head is None and head_type == "siglip2_native_pooler":
+        use_penultimate_metric = bool(
+            _getattr_path(
+                cfg, "MODEL.BACKBONE.PENULTIMATE_MAP_POOLER", False
+            )
+        )
         head = SigLIP2NativePoolerHead(
             input_dim=backbone.output_dim,
             pooler_dim=int(
@@ -120,6 +125,7 @@ def build_model(cfg, num_classes: int) -> ReIDModel:
             ),
             num_classes=num_classes,
             neck_feature=str(_getattr_path(cfg, "TEST.NECK_FEAT", "before")),
+            use_penultimate_metric=use_penultimate_metric,
         )
     elif head is None:
         embed_dim = int(_getattr_path(cfg, "MODEL.HEAD.EMBED_DIM", 768))

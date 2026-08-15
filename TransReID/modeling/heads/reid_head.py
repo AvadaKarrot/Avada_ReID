@@ -252,7 +252,12 @@ class MultiBranchParityHead(nn.Module):
 
 
 class SigLIP2NativePoolerHead(nn.Module):
-    """Use only SigLIP2's final pretrained MAP feature."""
+    """Use SigLIP2's final pretrained MAP feature for ID and inference.
+
+    An optional penultimate MAP feature can receive an additional triplet
+    loss.  It never changes the classifier, caption-alignment feature, or
+    evaluation descriptor.
+    """
 
     def __init__(
         self,
@@ -260,6 +265,7 @@ class SigLIP2NativePoolerHead(nn.Module):
         pooler_dim: int,
         num_classes: int,
         neck_feature: str = "before",
+        use_penultimate_metric: bool = False,
     ):
         super().__init__()
         if neck_feature not in {"before", "after"}:
@@ -268,7 +274,12 @@ class SigLIP2NativePoolerHead(nn.Module):
         self.pooler_dim = pooler_dim
         self.embed_dim = pooler_dim
         self.alignment_dim = pooler_dim
-        self.metric_dims = (pooler_dim,)
+        self.use_penultimate_metric = bool(use_penultimate_metric)
+        self.metric_dims = (
+            (pooler_dim, pooler_dim)
+            if self.use_penultimate_metric
+            else (pooler_dim,)
+        )
         self.num_classes = num_classes
         self.neck_feature = neck_feature
 
@@ -287,6 +298,17 @@ class SigLIP2NativePoolerHead(nn.Module):
             )
 
         auxiliary = backbone_output.auxiliary_features or {}
+        if self.use_penultimate_metric:
+            penultimate_feature = auxiliary.get("penultimate_map_global")
+            if penultimate_feature is None:
+                raise RuntimeError(
+                    "SigLIP2NativePoolerHead requires "
+                    "penultimate_map_global when its penultimate metric "
+                    "branch is enabled"
+                )
+            metric_features = (penultimate_feature, pooler_feature)
+        else:
+            metric_features = (pooler_feature,)
         pooler_embedding = self.bnneck_pooler(pooler_feature)
         pooler_logits = None
         if self.training:
@@ -303,6 +325,6 @@ class SigLIP2NativePoolerHead(nn.Module):
             logits=pooler_logits,
             patch_features=backbone_output.patch_features,
             id_logits=(pooler_logits,) if pooler_logits is not None else None,
-            metric_features=(pooler_feature,),
+            metric_features=metric_features,
             alignment_feature=auxiliary.get("alignment_global", pooler_feature),
         )

@@ -165,6 +165,24 @@ class ModelingContractTest(unittest.TestCase):
             encoder=Siglip2VisionModel(config),
             penultimate_map_pooler=True,
         )
+        vision_tower = getattr(
+            adapter.encoder, "vision_model", adapter.encoder
+        )
+        self.assertIsNot(adapter.penultimate_map_head, vision_tower.head)
+        native_parameters = dict(vision_tower.head.named_parameters())
+        penultimate_parameters = dict(
+            adapter.penultimate_map_head.named_parameters()
+        )
+        self.assertEqual(
+            native_parameters.keys(), penultimate_parameters.keys()
+        )
+        for name in native_parameters:
+            self.assertIsNot(
+                native_parameters[name], penultimate_parameters[name]
+            )
+            torch.testing.assert_close(
+                native_parameters[name], penultimate_parameters[name]
+            )
         image_inputs = {
             "pixel_values": torch.randn(2, 4, 12),
             "pixel_attention_mask": torch.tensor(
@@ -358,6 +376,114 @@ class ModelingContractTest(unittest.TestCase):
             outputs.embedding,
             backbone_output.secondary_global,
         )
+
+    def test_siglip2_native_pooler_head_adds_only_penultimate_triplet(self):
+        final_map = torch.randn(4, 32)
+        penultimate_map = torch.randn(4, 32)
+        alignment = torch.randn(4, 32)
+        backbone_output = BackboneOutput(
+            global_feature=torch.randn(4, 32),
+            patch_features=torch.randn(4, 2, 32),
+            pre_norm_global=torch.randn(4, 32),
+            secondary_global=final_map,
+            auxiliary_features={
+                "alignment_global": alignment,
+                "penultimate_map_global": penultimate_map,
+            },
+        )
+        head = SigLIP2NativePoolerHead(
+            input_dim=32,
+            pooler_dim=32,
+            num_classes=2,
+            use_penultimate_metric=True,
+        )
+        head.train()
+
+        outputs = head(backbone_output)
+
+        self.assertEqual(len(outputs.id_logits), 1)
+        self.assertEqual(head.metric_dims, (32, 32))
+        self.assertEqual(len(outputs.metric_features), 2)
+        self.assertIs(outputs.metric_features[0], penultimate_map)
+        self.assertIs(outputs.metric_features[1], final_map)
+        self.assertIs(outputs.raw_feature, final_map)
+        self.assertIs(outputs.alignment_feature, alignment)
+        torch.testing.assert_close(outputs.embedding, final_map)
+
+    def test_siglip2_native_pooler_head_requires_penultimate_feature(self):
+        backbone_output = BackboneOutput(
+            global_feature=torch.randn(4, 32),
+            secondary_global=torch.randn(4, 32),
+        )
+        head = SigLIP2NativePoolerHead(
+            input_dim=32,
+            pooler_dim=32,
+            num_classes=2,
+            use_penultimate_metric=True,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "penultimate_map_global"):
+            head(backbone_output)
+
+    def test_siglip2_penultimate_contract_has_one_id_and_two_triplets(self):
+        class CountingTriplet(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.features = []
+
+            def forward(self, features, _):
+                self.features.append(features)
+                return features.sum() * 0.0
+
+        class RecordingCaptionObjective(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.image_features = None
+
+            def forward(self, image_features, **_):
+                self.image_features = image_features
+                return image_features.sum() * 0.0
+
+        final_map = torch.randn(4, 32)
+        penultimate_map = torch.randn(4, 32)
+        backbone_output = BackboneOutput(
+            global_feature=torch.randn(4, 32),
+            secondary_global=final_map,
+            auxiliary_features={
+                "alignment_global": final_map,
+                "penultimate_map_global": penultimate_map,
+            },
+        )
+        head = SigLIP2NativePoolerHead(
+            input_dim=32,
+            pooler_dim=32,
+            num_classes=2,
+            use_penultimate_metric=True,
+        ).train()
+        outputs = head(backbone_output)
+        caption_objective = RecordingCaptionObjective()
+        objective = ReIDObjective(
+            caption_objective=caption_objective,
+            caption_weight=0.1,
+        )
+        triplet = CountingTriplet()
+        objective.triplet = triplet
+
+        losses = objective(
+            outputs,
+            {
+                "pids": torch.tensor([0, 0, 1, 1]),
+                "captions": ("a", "b", "c", "d"),
+                "caption_mask": torch.ones(4, dtype=torch.bool),
+            },
+        )
+
+        self.assertTrue(torch.isfinite(losses["total"]))
+        self.assertEqual(len(outputs.id_logits), 1)
+        self.assertEqual(len(triplet.features), 2)
+        self.assertIs(triplet.features[0], penultimate_map)
+        self.assertIs(triplet.features[1], final_map)
+        self.assertIs(caption_objective.image_features, final_map)
 
     def test_multibranch_parity_head_matches_clip_loss_contract(self):
         penultimate_map = torch.randn(4, 32)
