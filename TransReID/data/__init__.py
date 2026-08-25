@@ -1,10 +1,13 @@
 from __future__ import print_function, absolute_import
 
+from .attribute_store import AttributeRecord, AttributeStore
 from .build import build_datamanager
 from .caption_store import CaptionStore
 from .records import ReIDSample, image_only_sample
 
 __all__ = [
+    "AttributeRecord",
+    "AttributeStore",
     "CaptionStore",
     "Dataset",
     "ImageDataManager",
