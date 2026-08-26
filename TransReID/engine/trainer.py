@@ -73,6 +73,12 @@ class Trainer:
             batch["caption_mask"] = batch["caption_mask"].to(
                 self.device, non_blocking=True
             )
+        if batch.get("attribute_targets") is not None:
+            batch["attribute_targets"] = move_to_device(
+                batch["attribute_targets"],
+                self.device,
+                non_blocking=True,
+            )
 
         self.optimizer.zero_grad(set_to_none=True)
         with torch.autocast(

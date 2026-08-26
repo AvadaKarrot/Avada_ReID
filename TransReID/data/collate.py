@@ -1,5 +1,26 @@
 import torch
 
+from data.semantic_targets import collate_attribute_targets
+
+
+def _unpack_source_batch(batch):
+    first = batch[0]
+    captions = None
+    semantic_targets = None
+    if len(first) == 5:
+        imgs, pids, camids, impaths, dsetids = zip(*batch)
+    elif len(first) == 6:
+        imgs, pids, camids, impaths, dsetids, captions = zip(*batch)
+    elif len(first) == 7:
+        (
+            imgs, pids, camids, impaths, dsetids, captions, semantic_targets
+        ) = zip(*batch)
+    else:
+        raise ValueError(f"Unsupported source batch record length {len(first)}")
+    if captions is not None and all(value is None for value in captions):
+        captions = None
+    return imgs, pids, camids, impaths, dsetids, captions, semantic_targets
+
 
 class NaFlexCollator:
     """Convert variable-size PIL images to the official NaFlex batch contract."""
@@ -33,11 +54,9 @@ class NaFlexCollator:
         )
 
     def __call__(self, batch):
-        if self.caption:
-            imgs, pids, camids, impaths, dsetids, captions = zip(*batch)
-        else:
-            imgs, pids, camids, impaths, dsetids = zip(*batch)
-            captions = None
+        (
+            imgs, pids, camids, impaths, dsetids, captions, semantic_targets
+        ) = _unpack_source_batch(batch)
 
         encoded = self.processor(
             images=list(imgs),
@@ -71,10 +90,15 @@ class NaFlexCollator:
             'dataset_ids': dsetids,
             'captions': captions,
             'caption_mask': None,
+            'attribute_targets': None,
         }
         if captions is not None:
             result['caption_mask'] = torch.tensor(
                 [bool(caption) for caption in captions], dtype=torch.bool
+            )
+        if semantic_targets is not None:
+            result['attribute_targets'] = collate_attribute_targets(
+                semantic_targets
             )
         return result
 
@@ -91,7 +115,9 @@ def collate_fn(batch):
 
 
 def caption_collate_fn(batch):
-    imgs, pids, camids, impaths, dsetids, captions = zip(*batch)
+    (
+        imgs, pids, camids, impaths, dsetids, captions, semantic_targets
+    ) = _unpack_source_batch(batch)
     return {
         "images": torch.stack(imgs, dim=0),
         "pids": torch.tensor(pids, dtype=torch.int64),
@@ -99,9 +125,18 @@ def caption_collate_fn(batch):
         "image_paths": impaths,
         "dataset_ids": dsetids,
         "captions": captions,
-        "caption_mask": torch.tensor(
-            [bool(caption) for caption in captions],
-            dtype=torch.bool,
+        "caption_mask": (
+            torch.tensor(
+                [bool(caption) for caption in captions],
+                dtype=torch.bool,
+            )
+            if captions is not None
+            else None
+        ),
+        "attribute_targets": (
+            collate_attribute_targets(semantic_targets)
+            if semantic_targets is not None
+            else None
         ),
     }
 

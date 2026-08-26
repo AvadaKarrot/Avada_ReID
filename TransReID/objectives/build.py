@@ -1,5 +1,7 @@
+from semantic.artifact import load_torch_artifact
+
+from .losses import AttributeCodebookObjective, CaptionAlignmentObjective
 from .reid_objective import ReIDObjective
-from .losses import CaptionAlignmentObjective
 from .text_encoders import LegacyCLIPTextEncoder, SigLIP2TextEncoder
 
 
@@ -12,7 +14,9 @@ def _getattr_path(obj, path, default=None):
     return current
 
 
-def build_objective(cfg, caption_objective=None) -> ReIDObjective:
+def build_objective(
+    cfg, caption_objective=None, attribute_codebook_objective=None
+) -> ReIDObjective:
     return ReIDObjective(
         triplet_margin=float(_getattr_path(cfg, "SOLVER.MARGIN", 0.3)),
         id_weight=float(_getattr_path(cfg, "MODEL.ID_LOSS_WEIGHT", 1.0)),
@@ -25,6 +29,38 @@ def build_objective(cfg, caption_objective=None) -> ReIDObjective:
         caption_objective=caption_objective,
         caption_weight=float(
             _getattr_path(cfg, "OBJECTIVE.CAPTION.WEIGHT", 0.0)
+        ),
+        attribute_codebook_objective=attribute_codebook_objective,
+        attribute_codebook_weight=float(
+            _getattr_path(cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.WEIGHT", 0.0)
+        ),
+    )
+
+
+def build_attribute_codebook_objective(cfg, image_dim: int):
+    if not _getattr_path(
+        cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.ENABLED", False
+    ):
+        return None
+    payload = load_torch_artifact(
+        _getattr_path(cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.CODEBOOK", "")
+    )
+    return AttributeCodebookObjective(
+        payload["buckets"],
+        image_dim=image_dim,
+        image_temperature=float(
+            _getattr_path(
+                cfg,
+                "OBJECTIVE.ATTRIBUTE_CODEBOOK.IMAGE_TEMPERATURE",
+                0.07,
+            )
+        ),
+        confidence_weighting=bool(
+            _getattr_path(
+                cfg,
+                "OBJECTIVE.ATTRIBUTE_CODEBOOK.CONFIDENCE_WEIGHTING",
+                True,
+            )
         ),
     )
 

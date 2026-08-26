@@ -5,6 +5,10 @@ def imagedata_kwargs(cfg):
         getattr(getattr(cfg, "OBJECTIVE", object()), "CAPTION", False)
         and getattr(cfg.OBJECTIVE.CAPTION, "ENABLED", False)
     )
+    attribute_enabled = bool(
+        getattr(getattr(cfg, "OBJECTIVE", object()), "ATTRIBUTE_CODEBOOK", False)
+        and cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.ENABLED
+    )
     return {
         "root": cfg.DATASETS.ROOT_DIR,
         "sources": cfg.DATASETS.SOURCES,
@@ -31,6 +35,33 @@ def imagedata_kwargs(cfg):
         ),
         "caption_selection": cfg.OBJECTIVE.CAPTION.SELECTION,
         "caption_missing_policy": cfg.OBJECTIVE.CAPTION.MISSING_POLICY,
+        "attribute_codebook": attribute_enabled,
+        "attribute_caption_file": (
+            cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.CAPTION_FILE
+            if attribute_enabled
+            else ""
+        ),
+        "attribute_phrase_bank_file": (
+            cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.PHRASE_BANK
+            if attribute_enabled
+            else ""
+        ),
+        "attribute_codebook_file": (
+            cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.CODEBOOK
+            if attribute_enabled
+            else ""
+        ),
+        "attribute_manifest_file": (
+            cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.MANIFEST
+            if attribute_enabled
+            else ""
+        ),
+        "attribute_text_temperature": float(
+            cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.TEXT_TEMPERATURE
+        ),
+        "attribute_missing_policy": (
+            cfg.OBJECTIVE.ATTRIBUTE_CODEBOOK.MISSING_POLICY
+        ),
         "naflex": (
             str(cfg.MODEL.BACKBONE.NAME).lower()
             == "siglip2_base_patch16_naflex"

@@ -7,6 +7,8 @@ import tarfile
 import zipfile
 import torch
 
+from data.semantic_targets import AttributeSemanticTarget
+
 from utils.tools_from_apa import read_image, download_url, mkdir_if_missing
 
 
@@ -345,23 +347,35 @@ class ImageDataset(Dataset):
         if len(item) == 4:
             img_path, pid, camid, dsetid = item
             captions = None
+            semantic_target = None
         elif len(item) == 5:
-            img_path, pid, camid, dsetid, captions = item
+            img_path, pid, camid, dsetid, payload = item
+            if isinstance(payload, AttributeSemanticTarget):
+                captions = None
+                semantic_target = payload
+            else:
+                captions = payload
+                semantic_target = None
+        elif len(item) == 6:
+            img_path, pid, camid, dsetid, captions, semantic_target = item
+            if not isinstance(semantic_target, AttributeSemanticTarget):
+                raise TypeError("six-field source record requires semantic target")
         else:
             raise ValueError(
                 'Image records must contain '
-                '(path, pid, camid, dataset_id[, captions])'
+                '(path, pid, camid, dataset_id[, captions][, semantic_target])'
             )
 
         img = read_image(img_path)
         if self.transform is not None:
             img = self._transform_image(self.transform, self.k_tfm, img)
 
-        if captions is None:
+        if captions is None and semantic_target is None:
             return img, pid, camid, img_path, dsetid
-
-        caption = self._select_caption(captions)
-        return img, pid, camid, img_path, dsetid, caption
+        caption = self._select_caption(captions) if captions is not None else None
+        if semantic_target is None:
+            return img, pid, camid, img_path, dsetid, caption
+        return img, pid, camid, img_path, dsetid, caption, semantic_target
 
     def show_summary(self):
         num_train_pids = self.get_num_pids(self.train)

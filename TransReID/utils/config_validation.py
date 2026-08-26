@@ -3,6 +3,13 @@
 
 def validate_training_config(current_cfg):
     caption_enabled = bool(current_cfg.OBJECTIVE.CAPTION.ENABLED)
+    attribute_node = getattr(
+        current_cfg.OBJECTIVE, "ATTRIBUTE_CODEBOOK", None
+    )
+    attribute_enabled = bool(
+        attribute_node is not None
+        and getattr(attribute_node, "ENABLED", False)
+    )
     model_head = getattr(current_cfg.MODEL, "HEAD", None)
     head_type = str(getattr(model_head, "TYPE", "standard")).lower()
     backbone_node = getattr(current_cfg.MODEL, "BACKBONE", None)
@@ -66,6 +73,36 @@ def validate_training_config(current_cfg):
             raise ValueError(
                 "OBJECTIVE.CAPTION.POSITIVE_MODE must be 'pid' or "
                 "'instance'"
+            )
+    if attribute_enabled:
+        node = attribute_node
+        required = {
+            "CAPTION_FILE": node.CAPTION_FILE,
+            "PHRASE_BANK": node.PHRASE_BANK,
+            "CODEBOOK": node.CODEBOOK,
+            "MANIFEST": node.MANIFEST,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError(
+                "Attribute codebook training requires " + ", ".join(missing)
+            )
+        if node.WEIGHT <= 0:
+            raise ValueError(
+                "Attribute codebook training requires WEIGHT > 0"
+            )
+        if node.TEXT_TEMPERATURE <= 0 or node.IMAGE_TEMPERATURE <= 0:
+            raise ValueError(
+                "Attribute codebook temperatures must be positive"
+            )
+        if node.MISSING_POLICY not in {"error", "mask"}:
+            raise ValueError(
+                "Attribute codebook MISSING_POLICY must be 'error' or 'mask'"
+            )
+        if backbone_name != "siglip2_base_patch16_naflex":
+            raise ValueError(
+                "PR2 Attribute codebook supervision is restricted to the "
+                "SigLIP2 NaFlex alignment space"
             )
     if getattr(current_cfg.MODEL, "SIE_CAMERA", False):
         raise ValueError(

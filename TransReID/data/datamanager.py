@@ -3,6 +3,7 @@ import copy
 import torch
 
 from data.caption_store import CaptionStore
+from data.semantic_targets import AttributeSemanticTargetStore
 from data.collate import (
     NaFlexCollator,
     caption_collate_fn,
@@ -47,6 +48,13 @@ class DataManager(object):
         caption_file='',
         caption_selection='random',
         caption_missing_policy='error',
+        attribute_codebook=False,
+        attribute_caption_file='',
+        attribute_phrase_bank_file='',
+        attribute_codebook_file='',
+        attribute_manifest_file='',
+        attribute_text_temperature=0.07,
+        attribute_missing_policy='error',
         naflex=False,
         naflex_model_name='',
         naflex_max_num_patches=128,
@@ -59,6 +67,7 @@ class DataManager(object):
         self.caption_file = caption_file
         self.caption_selection = caption_selection
         self.caption_missing_policy = caption_missing_policy
+        self.attribute_codebook = bool(attribute_codebook)
         self.naflex = bool(naflex)
         self.naflex_model_name = naflex_model_name
         self.naflex_max_num_patches = int(naflex_max_num_patches)
@@ -206,7 +215,9 @@ class ImageDataManager(DataManager):
     data_type = 'image'
 
     @staticmethod
-    def _merge_source_datasets(datasets, caption=False):
+    def _merge_source_datasets(
+        datasets, caption=False, attribute_codebook=False
+    ):
         """Merge source train splits without relying on legacy Dataset.__add__.
 
         Caption-enabled records append captions as a fifth field and preserve
@@ -225,15 +236,15 @@ class ImageDataManager(DataManager):
 
         for dataset in datasets:
             for item in dataset.train:
-                if caption:
-                    img_path, pid, camid, dsetid, captions = item
+                if caption or attribute_codebook:
+                    img_path, pid, camid, dsetid, *payload = item
                     merged_train.append(
                         (
                             img_path,
                             pid + pid_offset,
                             camid + cam_offset,
                             dsetid + dataset_offset,
-                            captions,
+                            *payload,
                         )
                     )
                 else:
@@ -313,6 +324,13 @@ class ImageDataManager(DataManager):
         caption_file='',
         caption_selection='random',
         caption_missing_policy='error',
+        attribute_codebook=False,
+        attribute_caption_file='',
+        attribute_phrase_bank_file='',
+        attribute_codebook_file='',
+        attribute_manifest_file='',
+        attribute_text_temperature=0.07,
+        attribute_missing_policy='error',
         naflex=False,
         naflex_model_name='',
         naflex_max_num_patches=128,
@@ -335,6 +353,13 @@ class ImageDataManager(DataManager):
             caption_file=caption_file,
             caption_selection=caption_selection,
             caption_missing_policy=caption_missing_policy,
+            attribute_codebook=attribute_codebook,
+            attribute_caption_file=attribute_caption_file,
+            attribute_phrase_bank_file=attribute_phrase_bank_file,
+            attribute_codebook_file=attribute_codebook_file,
+            attribute_manifest_file=attribute_manifest_file,
+            attribute_text_temperature=attribute_text_temperature,
+            attribute_missing_policy=attribute_missing_policy,
             naflex=naflex,
             naflex_model_name=naflex_model_name,
             naflex_max_num_patches=naflex_max_num_patches,
@@ -387,9 +412,30 @@ class ImageDataManager(DataManager):
                     f'=> Bound captions for {name}: '
                     f'{covered}/{len(dataset.train)} source-train images'
                 )
+        if attribute_codebook:
+            target_store = AttributeSemanticTargetStore.from_artifacts(
+                attribute_caption_file,
+                attribute_phrase_bank_file,
+                attribute_codebook_file,
+                source_datasets=self.sources,
+                text_temperature=attribute_text_temperature,
+                manifest_file=attribute_manifest_file,
+            )
+            for name, dataset in zip(self.sources, source_datasets):
+                dataset.train = target_store.bind(
+                    dataset.train,
+                    dataset=name,
+                    missing_policy=attribute_missing_policy,
+                )
+                dataset.data = dataset.train
+                print(
+                    f'=> Bound Attribute codebook targets for {name}: '
+                    f'{len(dataset.train)} source-train images'
+                )
         trainset = self._merge_source_datasets(
             source_datasets,
             caption=caption,
+            attribute_codebook=attribute_codebook,
         )
         self._num_train_pids = trainset.num_train_pids
         self._num_train_cams = trainset.num_train_cams
@@ -409,7 +455,11 @@ class ImageDataManager(DataManager):
             'collate_fn': (
                 self.naflex_train_collate
                 if self.naflex
-                else (caption_collate_fn if caption else collate_fn)
+                else (
+                    caption_collate_fn
+                    if caption or attribute_codebook
+                    else collate_fn
+                )
             ),
             'pin_memory': self.use_gpu,
         }
@@ -495,7 +545,11 @@ class ImageDataManager(DataManager):
             'collate_fn': (
                 self.naflex_source_eval_collate
                 if self.naflex
-                else (caption_collate_fn if caption else val_collate_fn)
+                else (
+                    caption_collate_fn
+                    if caption or attribute_codebook
+                    else val_collate_fn
+                )
             ),
             'pin_memory': self.use_gpu,
             'drop_last': False,

@@ -18,6 +18,8 @@ class ReIDObjective(nn.Module):
         label_smoothing: float = 0.0,
         caption_objective: Optional[nn.Module] = None,
         caption_weight: float = 0.0,
+        attribute_codebook_objective: Optional[nn.Module] = None,
+        attribute_codebook_weight: float = 0.0,
     ):
         super().__init__()
         self.triplet = BatchHardTripletLoss(margin=triplet_margin)
@@ -26,6 +28,8 @@ class ReIDObjective(nn.Module):
         self.label_smoothing = label_smoothing
         self.caption_objective = caption_objective
         self.caption_weight = caption_weight
+        self.attribute_codebook_objective = attribute_codebook_objective
+        self.attribute_codebook_weight = attribute_codebook_weight
 
     def load_state_dict(self, state_dict, strict=True):
         """Load compact objectives while preserving strict validation.
@@ -110,6 +114,24 @@ class ReIDObjective(nn.Module):
                 pids=pids,
             )
             total = total + self.caption_weight * losses["caption"]
+
+        if (
+            self.attribute_codebook_objective is not None
+            and self.attribute_codebook_weight > 0
+        ):
+            alignment_feature = (
+                outputs.alignment_feature
+                if outputs.alignment_feature is not None
+                else outputs.raw_feature
+            )
+            losses["attribute_codebook"] = self.attribute_codebook_objective(
+                alignment_feature,
+                batch.get("attribute_targets"),
+            )
+            total = total + (
+                self.attribute_codebook_weight
+                * losses["attribute_codebook"]
+            )
 
         losses["total"] = total
         return losses

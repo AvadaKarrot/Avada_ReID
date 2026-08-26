@@ -18,7 +18,11 @@ from config import cfg
 from data.build import build_datamanager
 from engine import Evaluator, Trainer
 from modeling import build_model
-from objectives import build_caption_objective, build_objective
+from objectives import (
+    build_attribute_codebook_objective,
+    build_caption_objective,
+    build_objective,
+)
 from optim import build_optimizer
 from solver.lr_scheduler import WarmupMultiStepLR
 from utils.config_validation import validate_training_config
@@ -71,8 +75,13 @@ def main():
     caption_objective = build_caption_objective(
         cfg, image_dim=model.head.alignment_dim
     )
+    attribute_codebook_objective = build_attribute_codebook_objective(
+        cfg, image_dim=model.head.alignment_dim
+    )
     objective = build_objective(
-        cfg, caption_objective=caption_objective
+        cfg,
+        caption_objective=caption_objective,
+        attribute_codebook_objective=attribute_codebook_objective,
     )
     optimizer = build_optimizer(cfg, model, objective)
     scheduler = WarmupMultiStepLR(
