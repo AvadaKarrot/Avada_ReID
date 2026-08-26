@@ -15,6 +15,7 @@ from semantic.codebook import (
 )
 from semantic.artifact import save_torch_artifact, sha256_file
 from tools.validate_attribute_codebook import validate_directory
+from objectives.reid_objective import ReIDObjective
 
 
 class FakeTextEncoder(torch.nn.Module):
@@ -143,6 +144,24 @@ class AttributeStoreTest(unittest.TestCase):
 
 
 class SemanticCodebookTest(unittest.TestCase):
+    def test_codebook_weight_schedule_supports_delay_and_linear_decay(self):
+        objective = ReIDObjective(
+            attribute_codebook_weight=0.05,
+            attribute_codebook_start_epoch=6,
+            attribute_codebook_decay_start_epoch=15,
+            attribute_codebook_final_weight=0.01,
+        )
+        objective.set_epoch(5, max_epochs=30)
+        self.assertEqual(objective.current_attribute_codebook_weight(), 0.0)
+        objective.set_epoch(6, max_epochs=30)
+        self.assertEqual(objective.current_attribute_codebook_weight(), 0.05)
+        objective.set_epoch(15, max_epochs=30)
+        self.assertEqual(objective.current_attribute_codebook_weight(), 0.05)
+        objective.set_epoch(30, max_epochs=30)
+        self.assertAlmostEqual(
+            objective.current_attribute_codebook_weight(), 0.01
+        )
+
     def test_merge_rejects_large_compactness_degradation(self):
         embeddings = F.normalize(
             torch.tensor(

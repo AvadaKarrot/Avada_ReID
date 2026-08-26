@@ -45,6 +45,7 @@ class AttributeCodebookObjective(nn.Module):
             self.register_buffer(
                 f"confidence_{index}", confidence, persistent=False
             )
+        self.last_metrics = {}
 
     def forward(self, image_features, attribute_targets):
         if attribute_targets is None:
@@ -53,6 +54,9 @@ class AttributeCodebookObjective(nn.Module):
         quality = attribute_targets["quality"].to(images.device).float()
         weighted_loss = images.new_zeros(())
         weight_sum = images.new_zeros(())
+        text_entropy_sum = images.new_zeros(())
+        image_entropy_sum = images.new_zeros(())
+        entropy_count = images.new_zeros(())
         for index, bucket in enumerate(self.bucket_names):
             target = attribute_targets["distributions"][bucket].to(
                 images.device
@@ -64,6 +68,24 @@ class AttributeCodebookObjective(nn.Module):
             log_q_image = F.log_softmax(
                 images @ prototypes.t() / self.image_temperature, dim=1
             )
+            normalizer = torch.log(
+                images.new_tensor(float(max(prototypes.shape[0], 2)))
+            )
+            target_safe = target.clamp_min(1e-12)
+            text_entropy = -(
+                target_safe * target_safe.log()
+            ).sum(dim=1) / normalizer
+            image_entropy = -(
+                log_q_image.exp() * log_q_image
+            ).sum(dim=1) / normalizer
+            valid = mask.float()
+            text_entropy_sum = text_entropy_sum + (
+                text_entropy * valid
+            ).sum()
+            image_entropy_sum = image_entropy_sum + (
+                image_entropy * valid
+            ).sum()
+            entropy_count = entropy_count + valid.sum()
             per_sample = F.kl_div(
                 log_q_image,
                 target,
@@ -77,5 +99,17 @@ class AttributeCodebookObjective(nn.Module):
             weighted_loss = weighted_loss + (per_sample * weights).sum()
             weight_sum = weight_sum + weights.sum()
         if weight_sum.item() == 0:
+            self.last_metrics = {
+                "codebook_text_entropy": images.new_zeros(()),
+                "codebook_image_entropy": images.new_zeros(()),
+            }
             return image_features.sum() * 0.0
+        self.last_metrics = {
+            "codebook_text_entropy": (
+                text_entropy_sum / entropy_count.clamp_min(1.0)
+            ).detach(),
+            "codebook_image_entropy": (
+                image_entropy_sum / entropy_count.clamp_min(1.0)
+            ).detach(),
+        }
         return weighted_loss / weight_sum.clamp_min(1e-12)

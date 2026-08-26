@@ -115,6 +115,8 @@ class Trainer:
         for epoch in range(state.epoch + 1, max_epochs + 1):
             self.model.train()
             self.objective.train()
+            if hasattr(self.objective, "set_epoch"):
+                self.objective.set_epoch(epoch, max_epochs=max_epochs)
 
             for iteration, batch in enumerate(train_loader, start=1):
                 losses = self.train_step(batch)

@@ -20,6 +20,9 @@ class ReIDObjective(nn.Module):
         caption_weight: float = 0.0,
         attribute_codebook_objective: Optional[nn.Module] = None,
         attribute_codebook_weight: float = 0.0,
+        attribute_codebook_start_epoch: int = 1,
+        attribute_codebook_decay_start_epoch: int = 0,
+        attribute_codebook_final_weight: float = 0.0,
     ):
         super().__init__()
         self.triplet = BatchHardTripletLoss(margin=triplet_margin)
@@ -30,6 +33,53 @@ class ReIDObjective(nn.Module):
         self.caption_weight = caption_weight
         self.attribute_codebook_objective = attribute_codebook_objective
         self.attribute_codebook_weight = attribute_codebook_weight
+        self.attribute_codebook_start_epoch = int(
+            attribute_codebook_start_epoch
+        )
+        self.attribute_codebook_decay_start_epoch = int(
+            attribute_codebook_decay_start_epoch
+        )
+        self.attribute_codebook_final_weight = float(
+            attribute_codebook_final_weight
+        )
+        self.current_epoch = 1
+        self.max_epochs = 1
+        if self.attribute_codebook_start_epoch < 1:
+            raise ValueError("attribute_codebook_start_epoch must be >= 1")
+        if self.attribute_codebook_decay_start_epoch < 0:
+            raise ValueError(
+                "attribute_codebook_decay_start_epoch must be >= 0"
+            )
+        if self.attribute_codebook_final_weight < 0:
+            raise ValueError(
+                "attribute_codebook_final_weight must be non-negative"
+            )
+
+    def set_epoch(self, epoch: int, max_epochs: Optional[int] = None):
+        self.current_epoch = int(epoch)
+        if max_epochs is not None:
+            self.max_epochs = int(max_epochs)
+
+    def current_attribute_codebook_weight(self) -> float:
+        if self.current_epoch < self.attribute_codebook_start_epoch:
+            return 0.0
+        decay_start = self.attribute_codebook_decay_start_epoch
+        if decay_start <= 0 or self.current_epoch <= decay_start:
+            return self.attribute_codebook_weight
+        if self.max_epochs <= decay_start:
+            return self.attribute_codebook_final_weight
+        progress = (self.current_epoch - decay_start) / (
+            self.max_epochs - decay_start
+        )
+        progress = min(max(progress, 0.0), 1.0)
+        return (
+            self.attribute_codebook_weight
+            + progress
+            * (
+                self.attribute_codebook_final_weight
+                - self.attribute_codebook_weight
+            )
+        )
 
     def load_state_dict(self, state_dict, strict=True):
         """Load compact objectives while preserving strict validation.
@@ -115,9 +165,10 @@ class ReIDObjective(nn.Module):
             )
             total = total + self.caption_weight * losses["caption"]
 
+        codebook_weight = self.current_attribute_codebook_weight()
         if (
             self.attribute_codebook_objective is not None
-            and self.attribute_codebook_weight > 0
+            and codebook_weight > 0
         ):
             alignment_feature = (
                 outputs.alignment_feature
@@ -128,10 +179,16 @@ class ReIDObjective(nn.Module):
                 alignment_feature,
                 batch.get("attribute_targets"),
             )
-            total = total + (
-                self.attribute_codebook_weight
-                * losses["attribute_codebook"]
+            total = total + codebook_weight * losses["attribute_codebook"]
+            losses["attribute_codebook_weight"] = total.new_tensor(
+                codebook_weight
             )
+            for name, value in getattr(
+                self.attribute_codebook_objective,
+                "last_metrics",
+                {},
+            ).items():
+                losses[name] = value
 
         losses["total"] = total
         return losses

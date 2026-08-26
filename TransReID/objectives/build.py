@@ -34,6 +34,23 @@ def build_objective(
         attribute_codebook_weight=float(
             _getattr_path(cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.WEIGHT", 0.0)
         ),
+        attribute_codebook_start_epoch=int(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.START_EPOCH", 1
+            )
+        ),
+        attribute_codebook_decay_start_epoch=int(
+            _getattr_path(
+                cfg,
+                "OBJECTIVE.ATTRIBUTE_CODEBOOK.DECAY_START_EPOCH",
+                0,
+            )
+        ),
+        attribute_codebook_final_weight=float(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.FINAL_WEIGHT", 0.0
+            )
+        ),
     )
 
 
