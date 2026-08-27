@@ -10,6 +10,13 @@ def validate_training_config(current_cfg):
         attribute_node is not None
         and getattr(attribute_node, "ENABLED", False)
     )
+    relation_node = getattr(
+        current_cfg.OBJECTIVE, "ATTRIBUTE_RELATION", None
+    )
+    relation_enabled = bool(
+        relation_node is not None
+        and getattr(relation_node, "ENABLED", False)
+    )
     model_head = getattr(current_cfg.MODEL, "HEAD", None)
     head_type = str(getattr(model_head, "TYPE", "standard")).lower()
     backbone_node = getattr(current_cfg.MODEL, "BACKBONE", None)
@@ -104,6 +111,34 @@ def validate_training_config(current_cfg):
                 "PR2 Attribute codebook supervision is restricted to the "
                 "SigLIP2 NaFlex alignment space"
             )
+    if relation_enabled:
+        if not attribute_enabled:
+            raise ValueError(
+                "Attribute relation requires ATTRIBUTE_CODEBOOK.ENABLED"
+            )
+        if relation_node.WEIGHT <= 0:
+            raise ValueError("Attribute relation requires WEIGHT > 0")
+        if relation_node.START_EPOCH < 1:
+            raise ValueError("Attribute relation START_EPOCH must be >= 1")
+        if relation_node.TEMPERATURE <= 0:
+            raise ValueError(
+                "Attribute relation TEMPERATURE must be positive"
+            )
+        if relation_node.DOMAIN_KEY not in {"dataset", "camera", "global"}:
+            raise ValueError(
+                "Attribute relation DOMAIN_KEY must be dataset, camera, "
+                "or global"
+            )
+        if relation_node.QUEUE_SIZE <= 0 or relation_node.MAX_DOMAINS <= 0:
+            raise ValueError(
+                "Attribute relation queue dimensions must be positive"
+            )
+        if (
+            relation_node.MIN_CODE_MASS <= 0
+            or relation_node.MIN_EFFECTIVE_SAMPLES <= 0
+            or relation_node.MIN_ACTIVE_CODES < 2
+        ):
+            raise ValueError("Invalid Attribute relation coverage thresholds")
     if getattr(current_cfg.MODEL, "SIE_CAMERA", False):
         raise ValueError(
             "Unified cross-domain training does not support source-camera "

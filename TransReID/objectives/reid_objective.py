@@ -23,6 +23,9 @@ class ReIDObjective(nn.Module):
         attribute_codebook_start_epoch: int = 1,
         attribute_codebook_decay_start_epoch: int = 0,
         attribute_codebook_final_weight: float = 0.0,
+        attribute_relation_objective: Optional[nn.Module] = None,
+        attribute_relation_weight: float = 0.0,
+        attribute_relation_start_epoch: int = 6,
     ):
         super().__init__()
         self.triplet = BatchHardTripletLoss(margin=triplet_margin)
@@ -42,6 +45,11 @@ class ReIDObjective(nn.Module):
         self.attribute_codebook_final_weight = float(
             attribute_codebook_final_weight
         )
+        self.attribute_relation_objective = attribute_relation_objective
+        self.attribute_relation_weight = float(attribute_relation_weight)
+        self.attribute_relation_start_epoch = int(
+            attribute_relation_start_epoch
+        )
         self.current_epoch = 1
         self.max_epochs = 1
         if self.attribute_codebook_start_epoch < 1:
@@ -54,6 +62,10 @@ class ReIDObjective(nn.Module):
             raise ValueError(
                 "attribute_codebook_final_weight must be non-negative"
             )
+        if self.attribute_relation_weight < 0:
+            raise ValueError("attribute_relation_weight must be non-negative")
+        if self.attribute_relation_start_epoch < 1:
+            raise ValueError("attribute_relation_start_epoch must be >= 1")
 
     def set_epoch(self, epoch: int, max_epochs: Optional[int] = None):
         self.current_epoch = int(epoch)
@@ -185,6 +197,37 @@ class ReIDObjective(nn.Module):
             )
             for name, value in getattr(
                 self.attribute_codebook_objective,
+                "last_metrics",
+                {},
+            ).items():
+                losses[name] = value
+
+        if (
+            self.attribute_relation_objective is not None
+            and self.attribute_relation_weight > 0
+            and self.current_epoch >= self.attribute_relation_start_epoch
+        ):
+            alignment_feature = (
+                outputs.alignment_feature
+                if outputs.alignment_feature is not None
+                else outputs.raw_feature
+            )
+            losses["attribute_relation"] = (
+                self.attribute_relation_objective(
+                    alignment_feature,
+                    batch.get("attribute_targets"),
+                    batch,
+                )
+            )
+            total = total + (
+                self.attribute_relation_weight
+                * losses["attribute_relation"]
+            )
+            losses["attribute_relation_weight"] = total.new_tensor(
+                self.attribute_relation_weight
+            )
+            for name, value in getattr(
+                self.attribute_relation_objective,
                 "last_metrics",
                 {},
             ).items():

@@ -1,5 +1,6 @@
 from .build import (
     build_attribute_codebook_objective,
+    build_attribute_relation_objective,
     build_caption_objective,
     build_objective,
 )
@@ -9,5 +10,6 @@ __all__ = [
     "ReIDObjective",
     "build_caption_objective",
     "build_attribute_codebook_objective",
+    "build_attribute_relation_objective",
     "build_objective",
 ]

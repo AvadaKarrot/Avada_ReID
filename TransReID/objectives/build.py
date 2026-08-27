@@ -1,6 +1,10 @@
 from semantic.artifact import load_torch_artifact
 
-from .losses import AttributeCodebookObjective, CaptionAlignmentObjective
+from .losses import (
+    AttributeCodebookObjective,
+    AttributeRelationObjective,
+    CaptionAlignmentObjective,
+)
 from .reid_objective import ReIDObjective
 from .text_encoders import LegacyCLIPTextEncoder, SigLIP2TextEncoder
 
@@ -15,7 +19,10 @@ def _getattr_path(obj, path, default=None):
 
 
 def build_objective(
-    cfg, caption_objective=None, attribute_codebook_objective=None
+    cfg,
+    caption_objective=None,
+    attribute_codebook_objective=None,
+    attribute_relation_objective=None,
 ) -> ReIDObjective:
     return ReIDObjective(
         triplet_margin=float(_getattr_path(cfg, "SOLVER.MARGIN", 0.3)),
@@ -51,6 +58,15 @@ def build_objective(
                 cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.FINAL_WEIGHT", 0.0
             )
         ),
+        attribute_relation_objective=attribute_relation_objective,
+        attribute_relation_weight=float(
+            _getattr_path(cfg, "OBJECTIVE.ATTRIBUTE_RELATION.WEIGHT", 0.0)
+        ),
+        attribute_relation_start_epoch=int(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.START_EPOCH", 6
+            )
+        ),
     )
 
 
@@ -77,6 +93,64 @@ def build_attribute_codebook_objective(cfg, image_dim: int):
                 cfg,
                 "OBJECTIVE.ATTRIBUTE_CODEBOOK.CONFIDENCE_WEIGHTING",
                 True,
+            )
+        ),
+    )
+
+
+def build_attribute_relation_objective(cfg, image_dim: int):
+    if not _getattr_path(
+        cfg, "OBJECTIVE.ATTRIBUTE_RELATION.ENABLED", False
+    ):
+        return None
+    payload = load_torch_artifact(
+        _getattr_path(cfg, "OBJECTIVE.ATTRIBUTE_CODEBOOK.CODEBOOK", "")
+    )
+    return AttributeRelationObjective(
+        payload["buckets"],
+        image_dim=image_dim,
+        relation_temperature=float(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.TEMPERATURE", 0.1
+            )
+        ),
+        domain_key=str(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.DOMAIN_KEY", "dataset"
+            )
+        ).lower(),
+        queue_size=int(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.QUEUE_SIZE", 256
+            )
+        ),
+        max_domains=int(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.MAX_DOMAINS", 32
+            )
+        ),
+        min_code_mass=float(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.MIN_CODE_MASS", 1.0
+            )
+        ),
+        min_effective_samples=float(
+            _getattr_path(
+                cfg,
+                "OBJECTIVE.ATTRIBUTE_RELATION.MIN_EFFECTIVE_SAMPLES",
+                2.0,
+            )
+        ),
+        min_active_codes=int(
+            _getattr_path(
+                cfg, "OBJECTIVE.ATTRIBUTE_RELATION.MIN_ACTIVE_CODES", 3
+            )
+        ),
+        min_anchor_confidence=float(
+            _getattr_path(
+                cfg,
+                "OBJECTIVE.ATTRIBUTE_RELATION.MIN_ANCHOR_CONFIDENCE",
+                0.0,
             )
         ),
     )
