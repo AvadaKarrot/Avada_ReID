@@ -16,6 +16,11 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from utils.protocol2_matrix import config_overrides, load_protocol2_matrix
+from utils.distributed_launcher import (
+    distributed_overrides,
+    validate_gpu_ids,
+    wrap_torchrun,
+)
 
 
 DEFAULT_MATRIX = (
@@ -59,7 +64,15 @@ def _write_json(path, payload):
     os.replace(temporary, path)
 
 
-def _command(matrix, run, mode, *, resume=False):
+def _command(
+    matrix,
+    run,
+    mode,
+    *,
+    resume=False,
+    nproc_per_node=1,
+    global_batch_size=64,
+):
     entry = (
         "tools/smoke_unified_caption.py"
         if mode == "smoke"
@@ -92,6 +105,16 @@ def _command(matrix, run, mode, *, resume=False):
         )
     elif resume:
         command.extend(["SOLVER.RESUME_TRAIN", "True"])
+    if mode == "train":
+        command.extend(
+            distributed_overrides(
+                nproc_per_node=nproc_per_node,
+                global_batch_size=global_batch_size,
+            )
+        )
+        command = wrap_torchrun(
+            command, nproc_per_node=nproc_per_node
+        )
     return command
 
 
@@ -106,7 +129,16 @@ def _select_runs(matrix, selected):
     return runs
 
 
-def _run_one(matrix, run, mode, logs_dir):
+def _run_one(
+    matrix,
+    run,
+    mode,
+    logs_dir,
+    *,
+    nproc_per_node,
+    global_batch_size,
+    gpu_ids,
+):
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / f"{run['name']}.{mode}.log"
     output_dir = Path(run["output_dir"])
@@ -134,7 +166,14 @@ def _run_one(matrix, run, mode, logs_dir):
                 f"Refusing non-resumable non-empty output: {output_dir}"
             )
 
-    command = _command(matrix, run, mode, resume=resume)
+    command = _command(
+        matrix,
+        run,
+        mode,
+        resume=resume,
+        nproc_per_node=nproc_per_node,
+        global_batch_size=global_batch_size,
+    )
     metadata = {
         "name": run["name"],
         "backbone": matrix.get("backbone", "clip"),
@@ -152,6 +191,8 @@ def _run_one(matrix, run, mode, logs_dir):
 
     environment = os.environ.copy()
     environment.update(OFFLINE_ENV)
+    if gpu_ids:
+        environment["CUDA_VISIBLE_DEVICES"] = gpu_ids
     with log_path.open("a", encoding="utf-8") as log_handle:
         result = subprocess.run(
             command,
@@ -202,18 +243,42 @@ def main():
         "--logs-dir",
         default="/root/autodl-tmp/logs/protocol2_clip",
     )
+    parser.add_argument("--nproc-per-node", type=int, default=1)
+    parser.add_argument("--global-batch-size", type=int, default=64)
+    parser.add_argument("--gpu-ids", default="")
     args = parser.parse_args()
+    validate_gpu_ids(
+        args.gpu_ids, nproc_per_node=args.nproc_per_node
+    )
 
     matrix = load_protocol2_matrix(args.matrix)
     runs = _select_runs(matrix, args.only)
     if args.mode == "dry-run":
         for run in runs:
-            print(" ".join(_command(matrix, run, "train")))
+            print(
+                " ".join(
+                    _command(
+                        matrix,
+                        run,
+                        "train",
+                        nproc_per_node=args.nproc_per_node,
+                        global_batch_size=args.global_batch_size,
+                    )
+                )
+            )
         return
 
     logs_dir = Path(args.logs_dir)
     for run in runs:
-        _run_one(matrix, run, args.mode, logs_dir)
+        _run_one(
+            matrix,
+            run,
+            args.mode,
+            logs_dir,
+            nproc_per_node=args.nproc_per_node,
+            global_batch_size=args.global_batch_size,
+            gpu_ids=args.gpu_ids,
+        )
 
 
 if __name__ == "__main__":

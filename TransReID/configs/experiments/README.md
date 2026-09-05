@@ -54,6 +54,11 @@ current delayed Codebook pipeline entry point is:
 bash tools/run_naflex_codebook_delayed_s1_p2.sh
 ```
 
+For historical two-card/global-batch-256 reproduction, use the DDP options on
+the matrix runners and follow
+`docs/naflex_two_gpu_ddp_bs256_runbook.md`. The canonical base recipes retain
+batch 64 so older experiment records are not silently redefined.
+
 Before starting a formal run, confirm the matrix's source domains, target domain,
 `DATASETS.COMBINEALL=false`, target caption disabled, seed, schedule, and output
 directory.

@@ -35,6 +35,16 @@ class CaptionRecordingObjective(nn.Module):
         return {"total": total}
 
 
+class CountingModel(ImageOnlyModel):
+    def __init__(self):
+        super().__init__()
+        self.forward_count = 0
+
+    def forward(self, images):
+        self.forward_count += 1
+        return super().forward(images)
+
+
 class ConstantEvaluator:
     def evaluate_loader(self, model, loader, num_query):
         self.last_num_query = num_query
@@ -42,6 +52,35 @@ class ConstantEvaluator:
 
 
 class UnifiedTrainerTest(unittest.TestCase):
+    def test_memory_smoke_stops_without_writing_checkpoints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = CountingModel()
+            objective = CaptionRecordingObjective()
+            optimizer = torch.optim.SGD(
+                list(model.parameters()) + list(objective.parameters()),
+                lr=0.1,
+            )
+            trainer = Trainer(
+                model=model,
+                objective=objective,
+                optimizer=optimizer,
+                device="cpu",
+                output_dir=directory,
+            )
+            batch = {
+                "images": torch.ones(2, 2),
+                "pids": torch.tensor([0, 1]),
+            }
+            state = trainer.fit(
+                train_loader=[batch, batch, batch],
+                max_epochs=1,
+                max_iterations_per_epoch=1,
+                save_checkpoints=False,
+            )
+            self.assertEqual(model.forward_count, 1)
+            self.assertEqual(state.epoch, 1)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_captions_reach_objective_but_not_model(self):
         with tempfile.TemporaryDirectory() as directory:
             model = ImageOnlyModel()

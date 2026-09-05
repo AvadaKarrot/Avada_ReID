@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.distributed as dist
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -45,6 +46,15 @@ def parse_args():
     parser.add_argument("--config_file", required=True)
     parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument(
+        "--smoke_iterations",
+        default=0,
+        type=int,
+        help=(
+            "Run only this many training iterations in one epoch, without "
+            "evaluation or checkpoints; intended for memory validation"
+        ),
+    )
+    parser.add_argument(
         "opts",
         help="Override configuration options",
         default=None,
@@ -60,16 +70,51 @@ def main():
     validate_training_config(cfg)
     cfg.freeze()
 
-    if cfg.MODEL.DIST_TRAIN:
-        raise NotImplementedError(
-            "The unified entry point will enable DDP after single-device "
-            "CLIP parity is verified. Use the legacy entry point for DDP now."
-        )
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.MODEL.DEVICE_ID)
+    distributed = bool(cfg.MODEL.DIST_TRAIN)
+    local_rank = int(os.getenv("LOCAL_RANK", args.local_rank))
+    if distributed:
+        if not torch.cuda.is_available():
+            raise RuntimeError("NCCL distributed training requires CUDA")
+        torch.cuda.set_device(local_rank)
+        dist.init_process_group(backend="nccl", init_method="env://")
+        world_size = dist.get_world_size()
+        if cfg.SOLVER.IMS_PER_BATCH % world_size:
+            raise ValueError(
+                "SOLVER.IMS_PER_BATCH must be divisible by world size"
+            )
+        local_batch = cfg.SOLVER.IMS_PER_BATCH // world_size
+        if local_batch % cfg.DATALOADER.NUM_INSTANCE:
+            raise ValueError(
+                "Per-rank batch size must be divisible by "
+                "DATALOADER.NUM_INSTANCE"
+            )
+        device = f"cuda:{local_rank}"
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.MODEL.DEVICE_ID)
+        world_size = 1
+        local_batch = cfg.SOLVER.IMS_PER_BATCH
+        device = cfg.MODEL.DEVICE
+
     set_seed(cfg.SOLVER.SEED)
-    Path(cfg.OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    logger = setup_logger("transreid", cfg.OUTPUT_DIR, if_train=True)
-    logger.info("Running unified image-only training with config:\n%s", cfg)
+    is_main_process = not distributed or dist.get_rank() == 0
+    if is_main_process:
+        Path(cfg.OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    if distributed:
+        dist.barrier()
+    logger = setup_logger(
+        "transreid",
+        cfg.OUTPUT_DIR if is_main_process else None,
+        if_train=True,
+    )
+    if is_main_process:
+        logger.info("Running unified image-only training with config:\n%s", cfg)
+        logger.info(
+            "Distributed=%s world_size=%d global_batch=%d per_rank_batch=%d",
+            distributed,
+            world_size,
+            cfg.SOLVER.IMS_PER_BATCH,
+            local_batch,
+        )
 
     data_manager = build_datamanager(cfg)
     model = build_model(cfg, num_classes=data_manager._num_train_pids)
@@ -98,7 +143,6 @@ def main():
         cfg.SOLVER.WARMUP_METHOD,
     )
 
-    device = cfg.MODEL.DEVICE
     if device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is configured but unavailable")
 
@@ -118,20 +162,31 @@ def main():
         output_dir=cfg.OUTPUT_DIR,
         model_name=cfg.MODEL.BACKBONE.NAME,
         log_period=cfg.SOLVER.LOG_PERIOD,
+        distributed=distributed,
+        local_rank=local_rank,
     )
-    validation = {
+    smoke_iterations = int(args.smoke_iterations)
+    if smoke_iterations < 0:
+        raise ValueError("--smoke_iterations must be non-negative")
+    validation = None if smoke_iterations else {
         "loader": data_manager.test_loader,
         "num_query": data_manager.num_query,
     }
-    trainer.fit(
-        train_loader=data_manager.train_loader,
-        max_epochs=cfg.SOLVER.MAX_EPOCHS,
-        checkpoint_period=cfg.SOLVER.CHECKPOINT_PERIOD,
-        eval_period=cfg.SOLVER.EVAL_PERIOD,
-        validation=validation,
-        resume=cfg.SOLVER.RESUME_TRAIN,
-        resume_path=cfg.SOLVER.RESUME_PATH or None,
-    )
+    try:
+        trainer.fit(
+            train_loader=data_manager.train_loader,
+            max_epochs=1 if smoke_iterations else cfg.SOLVER.MAX_EPOCHS,
+            checkpoint_period=cfg.SOLVER.CHECKPOINT_PERIOD,
+            eval_period=cfg.SOLVER.EVAL_PERIOD,
+            validation=validation,
+            resume=cfg.SOLVER.RESUME_TRAIN,
+            resume_path=cfg.SOLVER.RESUME_PATH or None,
+            max_iterations_per_epoch=smoke_iterations,
+            save_checkpoints=not bool(smoke_iterations),
+        )
+    finally:
+        if distributed and dist.is_initialized():
+            dist.destroy_process_group()
 
 
 if __name__ == "__main__":
