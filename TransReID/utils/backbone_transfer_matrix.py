@@ -9,9 +9,9 @@ from pathlib import Path
 BACKBONE_METHOD_CONFIGS = {
     "clip": {
         "image_only":
-            "configs/experiments/clip_market_to_msmt_image_only.yml",
+            "configs/experiments/base/clip_vit_b16_image_only.yml",
         "caption_alignment":
-            "configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml",
+            "configs/experiments/base/clip_vit_b16_caption_pid.yml",
     },
     "dinov3": {
         "image_only":
@@ -25,9 +25,9 @@ BACKBONE_METHOD_CONFIGS = {
     },
     "siglip2_naflex": {
         "image_only":
-            "configs/experiments/siglip2_naflex_native_image_only.yml",
+            "configs/experiments/base/siglip2_naflex_image_only.yml",
         "caption_alignment":
-            "configs/experiments/siglip2_naflex_native_caption_alignment.yml",
+            "configs/experiments/base/siglip2_naflex_caption_pid.yml",
     },
 }
 

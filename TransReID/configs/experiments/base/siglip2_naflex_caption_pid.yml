@@ -1,3 +1,4 @@
+# Active base recipe: SigLIP2 NaFlex with PID-aware Caption alignment.
 MODEL:
   DEVICE: "cuda"
   DEVICE_ID: "'0'"

@@ -1,3 +1,4 @@
+# Active base recipe: CLIP ViT-B/16 with PID-aware Caption alignment.
 MODEL:
   DEVICE: "cuda"
   DEVICE_ID: "'0'"
@@ -19,8 +20,21 @@ MODEL:
 OBJECTIVE:
   LABEL_SMOOTHING: 0.1
   CAPTION:
-    ENABLED: False
-    WEIGHT: 0.0
+    ENABLED: True
+    WEIGHT: 0.1
+    FILE: "/root/autodl-tmp/Avada_ReID/TransReID/caption_tools/output/final/v2.4/captions.jsonl"
+    # V2.4 stores the comprehensive description first. Keeping this fixed
+    # makes the Caption run differ from image-only only by the extra loss and
+    # does not consume Python RNG state inside dataset workers.
+    SELECTION: "first"
+    MISSING_POLICY: "error"
+    TEXT_ENCODER: "clip_legacy"
+    TEXT_TRAINABLE: False
+    FEATURE_LEVEL: "global"
+    USE_PROJECTION: False
+    PROJECTION_DIM: 512
+    TEMPERATURE: 0.07
+    POSITIVE_MODE: "pid"
 
 INPUT:
   PERSON_REID: True
@@ -70,4 +84,4 @@ TEST:
   FEAT_NORM: "yes"
   NECK_FEAT: "before"
 
-OUTPUT_DIR: "/root/autodl-tmp/experiments/unified_clipreid_parity/market_to_msmt17/seed_1234"
+OUTPUT_DIR: "/root/autodl-tmp/experiments/unified_clipreid_caption_alignment/market_to_msmt17/seed_1234"

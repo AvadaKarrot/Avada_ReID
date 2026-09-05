@@ -78,7 +78,7 @@ objectives/reid_objective.py
 config/defaults.py
 utils/config_validation.py
 tests/test_attribute_relation.py
-configs/experiments/siglip2_naflex_caption_attribute_codebook_relation_m_to_ms.yml
+configs/experiments/base/siglip2_naflex_caption_codebook_relation.yml
 tools/diagnose_attribute_relation_coverage.py
 ```
 
@@ -96,7 +96,7 @@ S1真实1-epoch smoke（使relation从epoch 1启用）：
 
 ```bash
 /root/miniconda3/bin/python tools/train.py \
-  --config_file configs/experiments/siglip2_naflex_caption_attribute_codebook_relation_m_to_ms.yml \
+  --config_file configs/experiments/base/siglip2_naflex_caption_codebook_relation.yml \
   SOLVER.MAX_EPOCHS 1 SOLVER.IMS_PER_BATCH 16 TEST.IMS_PER_BATCH 32 \
   DATALOADER.NUM_WORKERS 2 SOLVER.EVAL_PERIOD 1 SOLVER.CHECKPOINT_PERIOD 1 \
   OBJECTIVE.ATTRIBUTE_CODEBOOK.START_EPOCH 1 \
@@ -109,7 +109,7 @@ Protocol-2 smoke必须覆盖资产和domain key：
 
 ```bash
 /root/miniconda3/bin/python tools/train.py \
-  --config_file configs/experiments/siglip2_naflex_caption_attribute_codebook_relation_m_to_ms.yml \
+  --config_file configs/experiments/base/siglip2_naflex_caption_codebook_relation.yml \
   DATASETS.SOURCES market1501,msmt17,cuhksysu DATASETS.TARGETS cuhk03 \
   OBJECTIVE.ATTRIBUTE_CODEBOOK.PHRASE_BANK /root/autodl-tmp/precomputed/attribute_codebooks/market1501_msmt17_cuhksysu_pr1/phrase_bank.pt \
   OBJECTIVE.ATTRIBUTE_CODEBOOK.CODEBOOK /root/autodl-tmp/precomputed/attribute_codebooks/market1501_msmt17_cuhksysu_pr1/codebook.pt \

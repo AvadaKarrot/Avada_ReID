@@ -23,7 +23,7 @@ Protocol-2方向：M+MS+CS→C3、M+CS+C3→MS、MS+CS+C3→M。
 训练基础配置：
 
 ```text
-configs/experiments/siglip2_naflex_caption_attribute_codebook_m_to_ms.yml
+configs/experiments/base/siglip2_naflex_caption_codebook.yml
 ```
 
 脚本通过命令行覆盖每组的`DATASETS.SOURCES`、`DATASETS.TARGETS`、Codebook资产路径、输出目录和延迟调度。最终完整命令会写入每组训练日志开头的配置打印中。

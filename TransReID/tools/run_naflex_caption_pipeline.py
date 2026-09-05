@@ -14,8 +14,14 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path("/root/autodl-tmp")
-S1_MATRIX = PROJECT_DIR / "configs/experiments/siglip2_naflex_caption_alignment_s1_30ep.json"
-P2_MATRIX = PROJECT_DIR / "configs/experiments/protocol2_siglip2_naflex_caption_alignment_30ep.json"
+S1_MATRIX = (
+    PROJECT_DIR
+    / "configs/experiments/matrices/single_source/siglip2_naflex_caption_pid_30ep.json"
+)
+P2_MATRIX = (
+    PROJECT_DIR
+    / "configs/experiments/matrices/protocol2/siglip2_naflex_caption_pid_30ep.json"
+)
 CURRENT_LOGS = DATA_ROOT / "logs/siglip2_naflex_caption_pid_nce_m_to_ms"
 PIPELINE_LOGS = DATA_ROOT / "logs/siglip2_naflex_caption_pipeline"
 

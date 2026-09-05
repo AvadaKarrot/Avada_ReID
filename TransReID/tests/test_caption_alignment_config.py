@@ -17,13 +17,15 @@ IMAGE_ONLY_CONFIG = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "clip_market_to_msmt_image_only.yml"
+    / "base"
+    / "clip_vit_b16_image_only.yml"
 )
 CAPTION_CONFIG = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "clip_market_to_msmt_caption_alignment_v2_4.yml"
+    / "base"
+    / "clip_vit_b16_caption_pid.yml"
 )
 SIGLIP2_IMAGE_CONFIG = (
     PROJECT_DIR
@@ -41,13 +43,15 @@ SIGLIP2_NAFLEX_IMAGE_CONFIG = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "siglip2_naflex_native_image_only.yml"
+    / "base"
+    / "siglip2_naflex_image_only.yml"
 )
 SIGLIP2_NAFLEX_CAPTION_CONFIG = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "siglip2_naflex_native_caption_alignment.yml"
+    / "base"
+    / "siglip2_naflex_caption_pid.yml"
 )
 
 

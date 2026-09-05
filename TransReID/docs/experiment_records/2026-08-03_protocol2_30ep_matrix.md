@@ -14,7 +14,7 @@ best target checkpoint is retained as supplementary diagnostic information.
 | MSMT17 + CUHK-SYSU + CUHK03 | Market | image-only, Caption alignment |
 
 The machine-readable source of truth is
-`configs/experiments/protocol2_clip_matrix_30ep.json`.
+`configs/experiments/matrices/protocol2/clip_30ep.json`.
 
 ## Schedule contract
 

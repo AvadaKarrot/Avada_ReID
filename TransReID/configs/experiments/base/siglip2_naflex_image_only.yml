@@ -1,3 +1,4 @@
+# Active base recipe: SigLIP2 NaFlex native-MAP image-only ReID.
 MODEL:
   DEVICE: "cuda"
   DEVICE_ID: "'0'"

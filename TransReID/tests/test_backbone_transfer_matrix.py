@@ -22,21 +22,27 @@ SIGLIP2_FINAL_MAP_ONLY_IMAGE_ONLY_MATRIX_PATH = (
     Path(__file__).resolve().parents[1]
     / "configs"
     / "experiments"
-    / "siglip2_final_map_only_image_only_s1_30ep.json"
+    / "matrices"
+    / "single_source"
+    / "siglip2_map_image_only_30ep.json"
 )
 
 SIGLIP2_NAFLEX_IMAGE_ONLY_MATRIX_PATH = (
     Path(__file__).resolve().parents[1]
     / "configs"
     / "experiments"
-    / "siglip2_naflex_image_only_s1_30ep.json"
+    / "matrices"
+    / "single_source"
+    / "siglip2_naflex_image_only_30ep.json"
 )
 
 SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_MATRIX_PATH = (
     Path(__file__).resolve().parents[1]
     / "configs"
     / "experiments"
-    / "siglip2_naflex_caption_alignment_s1_30ep.json"
+    / "matrices"
+    / "single_source"
+    / "siglip2_naflex_caption_pid_30ep.json"
 )
 
 
@@ -134,7 +140,7 @@ class BackboneTransferMatrixTest(unittest.TestCase):
         self.assertTrue(
             all(
                 run["base_config"].endswith(
-                    "siglip2_naflex_native_caption_alignment.yml"
+                    "base/siglip2_naflex_caption_pid.yml"
                 )
                 for run in matrix["runs"]
             )

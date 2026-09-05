@@ -60,7 +60,7 @@ def main():
     )
     parser.add_argument(
         "--unified-config",
-        default="configs/experiments/clip_market_to_msmt_image_only.yml",
+        default="configs/experiments/base/clip_vit_b16_image_only.yml",
     )
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--batch-size", type=int, default=16)

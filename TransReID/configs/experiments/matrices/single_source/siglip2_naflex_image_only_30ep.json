@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "protocol": "one-source-one-target",
   "schedule": "S1_30ep_eval5_naflex_image_only",
   "combineall": false,
@@ -22,7 +23,7 @@
       "name": "siglip2_naflex_ms_to_m_image_only_s1",
       "backbone": "siglip2_naflex",
       "method": "image_only",
-      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
       "source": "msmt17",
       "target": "market1501",
       "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/ms_to_m/seed_1234"
@@ -31,7 +32,7 @@
       "name": "siglip2_naflex_m_to_ms_image_only_s1",
       "backbone": "siglip2_naflex",
       "method": "image_only",
-      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
       "source": "market1501",
       "target": "msmt17",
       "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/m_to_ms/seed_1234"
@@ -40,7 +41,7 @@
       "name": "siglip2_naflex_ms_to_c3_image_only_s1",
       "backbone": "siglip2_naflex",
       "method": "image_only",
-      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
       "source": "msmt17",
       "target": "cuhk03",
       "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/ms_to_c3/seed_1234"
@@ -49,7 +50,7 @@
       "name": "siglip2_naflex_c3_to_ms_image_only_s1",
       "backbone": "siglip2_naflex",
       "method": "image_only",
-      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
       "source": "cuhk03",
       "target": "msmt17",
       "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/c3_to_ms/seed_1234"
@@ -58,7 +59,7 @@
       "name": "siglip2_naflex_c3_to_m_image_only_s1",
       "backbone": "siglip2_naflex",
       "method": "image_only",
-      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
       "source": "cuhk03",
       "target": "market1501",
       "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/c3_to_m/seed_1234"
@@ -67,7 +68,7 @@
       "name": "siglip2_naflex_m_to_c3_image_only_s1",
       "backbone": "siglip2_naflex",
       "method": "image_only",
-      "base_config": "configs/experiments/siglip2_naflex_native_image_only.yml",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
       "source": "market1501",
       "target": "cuhk03",
       "output_dir": "/root/autodl-tmp/experiments/backbone_transfer_s1/siglip2_naflex/m_to_c3/seed_1234"

@@ -10,7 +10,7 @@ esac
 REPO=/root/autodl-tmp/Avada_ReID
 PROJECT="$REPO/TransReID"
 PYTHON=/root/miniconda3/bin/python
-BASE_CONFIG=configs/experiments/siglip2_naflex_caption_attribute_codebook_m_to_ms.yml
+BASE_CONFIG=configs/experiments/base/siglip2_naflex_caption_codebook.yml
 CAPTION_FILE="$PROJECT/caption_tools/output/final/v2.4/captions.jsonl"
 ASSET_ROOT=/root/autodl-tmp/precomputed/attribute_codebooks
 LOGROOT=/root/autodl-tmp/logs/codebook_delayed_s1_p2

@@ -27,7 +27,7 @@ Run from `TransReID`:
 
 ```bash
 python tools/build_attribute_codebook.py \
-  --config-file configs/experiments/siglip2_naflex_native_caption_alignment.yml \
+  --config-file configs/experiments/base/siglip2_naflex_caption_pid.yml \
   --output-dir /root/autodl-tmp/precomputed/attribute_codebooks/market1501 \
   --domain-mode auto \
   --device cuda

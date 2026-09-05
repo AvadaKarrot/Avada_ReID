@@ -7,10 +7,9 @@ from pathlib import Path
 
 
 DEFAULT_METHOD_CONFIGS = {
-    "image_only": "configs/experiments/clip_market_to_msmt_image_only.yml",
+    "image_only": "configs/experiments/base/clip_vit_b16_image_only.yml",
     "caption_alignment": (
-        "configs/experiments/"
-        "clip_market_to_msmt_caption_alignment_v2_4.yml"
+        "configs/experiments/base/clip_vit_b16_caption_pid.yml"
     ),
 }
 

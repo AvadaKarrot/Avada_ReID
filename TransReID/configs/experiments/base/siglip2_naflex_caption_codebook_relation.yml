@@ -1,3 +1,4 @@
+# Active recipe: SigLIP2 NaFlex with Caption-C, Codebook, and Relation KD.
 MODEL:
   DEVICE: "cuda"
   DEVICE_ID: "'0'"
@@ -66,11 +67,22 @@ TEST:
 OBJECTIVE:
   LABEL_SMOOTHING: 0.1
   CAPTION:
-    ENABLED: False
-    WEIGHT: 0.0
+    ENABLED: True
+    WEIGHT: 0.1
+    FILE: "/root/autodl-tmp/Avada_ReID/TransReID/caption_tools/output/final/v2.4/captions.jsonl"
+    SELECTION: "first"
+    MISSING_POLICY: "error"
+    TEXT_ENCODER: "siglip2_native"
+    TEXT_TRAINABLE: False
+    FEATURE_LEVEL: "global"
+    USE_PROJECTION: False
+    PROJECTION_DIM: 768
+    TEMPERATURE: 0.07
+    POSITIVE_MODE: "pid"
   ATTRIBUTE_CODEBOOK:
     ENABLED: True
     WEIGHT: 0.05
+    START_EPOCH: 6
     CAPTION_FILE: "/root/autodl-tmp/Avada_ReID/TransReID/caption_tools/output/final/v2.4/captions.jsonl"
     PHRASE_BANK: "/root/autodl-tmp/precomputed/attribute_codebooks/market1501_pr1/phrase_bank.pt"
     CODEBOOK: "/root/autodl-tmp/precomputed/attribute_codebooks/market1501_pr1/codebook.pt"
@@ -79,5 +91,17 @@ OBJECTIVE:
     IMAGE_TEMPERATURE: 0.07
     MISSING_POLICY: "error"
     CONFIDENCE_WEIGHTING: True
+  ATTRIBUTE_RELATION:
+    ENABLED: True
+    WEIGHT: 0.01
+    START_EPOCH: 6
+    TEMPERATURE: 0.1
+    DOMAIN_KEY: "camera"
+    QUEUE_SIZE: 256
+    MAX_DOMAINS: 32
+    MIN_CODE_MASS: 1.0
+    MIN_EFFECTIVE_SAMPLES: 2.0
+    MIN_ACTIVE_CODES: 3
+    MIN_ANCHOR_CONFIDENCE: 0.0
 
-OUTPUT_DIR: "/root/autodl-tmp/experiments/attribute_codebook_pr2/codebook_only/m_to_ms/seed_1234"
+OUTPUT_DIR: "/root/autodl-tmp/experiments/attribute_relation_pr3/m_to_ms/seed_1234"

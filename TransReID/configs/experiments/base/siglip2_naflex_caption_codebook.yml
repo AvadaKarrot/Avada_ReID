@@ -1,3 +1,4 @@
+# Active recipe: SigLIP2 NaFlex with Caption-C and Attribute Codebook.
 MODEL:
   DEVICE: "cuda"
   DEVICE_ID: "'0'"

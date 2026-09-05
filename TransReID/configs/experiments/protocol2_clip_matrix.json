@@ -5,7 +5,7 @@
     {
       "name": "m_ms_cs_to_c3_image_only",
       "method": "image_only",
-      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "base_config": "configs/experiments/base/clip_vit_b16_image_only.yml",
       "sources": ["market1501", "msmt17", "cuhksysu"],
       "target": "cuhk03",
       "output_dir": "/root/autodl-tmp/experiments/protocol2/clip_image_only/m_ms_cs_to_c3/seed_1234"
@@ -13,7 +13,7 @@
     {
       "name": "m_ms_cs_to_c3_caption_alignment",
       "method": "caption_alignment",
-      "base_config": "configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml",
+      "base_config": "configs/experiments/base/clip_vit_b16_caption_pid.yml",
       "sources": ["market1501", "msmt17", "cuhksysu"],
       "target": "cuhk03",
       "output_dir": "/root/autodl-tmp/experiments/protocol2/clip_caption_alignment/m_ms_cs_to_c3/seed_1234"
@@ -21,7 +21,7 @@
     {
       "name": "m_cs_c3_to_ms_image_only",
       "method": "image_only",
-      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "base_config": "configs/experiments/base/clip_vit_b16_image_only.yml",
       "sources": ["market1501", "cuhksysu", "cuhk03"],
       "target": "msmt17",
       "output_dir": "/root/autodl-tmp/experiments/protocol2/clip_image_only/m_cs_c3_to_ms/seed_1234"
@@ -29,7 +29,7 @@
     {
       "name": "m_cs_c3_to_ms_caption_alignment",
       "method": "caption_alignment",
-      "base_config": "configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml",
+      "base_config": "configs/experiments/base/clip_vit_b16_caption_pid.yml",
       "sources": ["market1501", "cuhksysu", "cuhk03"],
       "target": "msmt17",
       "output_dir": "/root/autodl-tmp/experiments/protocol2/clip_caption_alignment/m_cs_c3_to_ms/seed_1234"
@@ -37,7 +37,7 @@
     {
       "name": "ms_cs_c3_to_m_image_only",
       "method": "image_only",
-      "base_config": "configs/experiments/clip_market_to_msmt_image_only.yml",
+      "base_config": "configs/experiments/base/clip_vit_b16_image_only.yml",
       "sources": ["msmt17", "cuhksysu", "cuhk03"],
       "target": "market1501",
       "output_dir": "/root/autodl-tmp/experiments/protocol2/clip_image_only/ms_cs_c3_to_m/seed_1234"
@@ -45,7 +45,7 @@
     {
       "name": "ms_cs_c3_to_m_caption_alignment",
       "method": "caption_alignment",
-      "base_config": "configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml",
+      "base_config": "configs/experiments/base/clip_vit_b16_caption_pid.yml",
       "sources": ["msmt17", "cuhksysu", "cuhk03"],
       "target": "market1501",
       "output_dir": "/root/autodl-tmp/experiments/protocol2/clip_caption_alignment/ms_cs_c3_to_m/seed_1234"

@@ -22,7 +22,9 @@ MATRIX_PATH_30 = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "protocol2_clip_matrix_30ep.json"
+    / "matrices"
+    / "protocol2"
+    / "clip_30ep.json"
 )
 MATRIX_PATH_SIGLIP2_30 = (
     PROJECT_DIR
@@ -46,13 +48,17 @@ MATRIX_PATH_SIGLIP2_NAFLEX_IMAGE_ONLY_30 = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "protocol2_siglip2_naflex_image_only_30ep.json"
+    / "matrices"
+    / "protocol2"
+    / "siglip2_naflex_image_only_30ep.json"
 )
 MATRIX_PATH_SIGLIP2_NAFLEX_CAPTION_ALIGNMENT_30 = (
     PROJECT_DIR
     / "configs"
     / "experiments"
-    / "protocol2_siglip2_naflex_caption_alignment_30ep.json"
+    / "matrices"
+    / "protocol2"
+    / "siglip2_naflex_caption_pid_30ep.json"
 )
 
 

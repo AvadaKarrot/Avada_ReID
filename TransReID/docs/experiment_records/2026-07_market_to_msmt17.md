@@ -50,7 +50,7 @@ to Caption supervision alone.
 ### Image-only
 
 - Entry: `tools/train.py`.
-- Config: `configs/experiments/clip_market_to_msmt_image_only.yml`.
+- Config: `configs/experiments/base/clip_vit_b16_image_only.yml`.
 - Run commit: `6293045`.
 - Log: `/root/autodl-tmp/logs/clip_market_to_msmt_image_only_seed1234.log`.
 - Output: `/root/autodl-tmp/experiments/clip_market_to_msmt_image_only_seed1234`.
@@ -109,7 +109,7 @@ adding the legacy CLIP outputs, two ID branches, three triplet branches,
 optimizer parameter groups, augmentation and schedule to the unified API.
 
 - Entry: `tools/train.py`.
-- Config: `configs/experiments/clip_market_to_msmt_image_only.yml`.
+- Config: `configs/experiments/base/clip_vit_b16_image_only.yml`.
 - Numerical gate: `tools/validate_clip_image_only_parity.py`.
 - Log:
   `/root/autodl-tmp/logs/unified_clipreid_parity_market_to_msmt17_seed1234.log`.
@@ -147,7 +147,7 @@ Commit `5666638e35e37c4222ff9568d9966d0a63f8e078` adds the first fair
 Caption ablation on top of the passed image-only parity model.
 
 - Config:
-  `configs/experiments/clip_market_to_msmt_caption_alignment_v2_4.yml`.
+  `configs/experiments/base/clip_vit_b16_caption_pid.yml`.
 - Visual ReID objective remains two ID losses plus three triplet losses over
   feature dimensions 768, 768 and 512.
 - The only added training term is a symmetric PID-aware alignment loss between

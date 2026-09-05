@@ -9,7 +9,7 @@ esac
 
 PROJECT=/root/autodl-tmp/Avada_ReID/TransReID
 PYTHON=/root/miniconda3/bin/python
-CONFIG=configs/experiments/siglip2_naflex_caption_attribute_codebook_relation_m_to_ms.yml
+CONFIG=configs/experiments/base/siglip2_naflex_caption_codebook_relation.yml
 ASSET_ROOT=/root/autodl-tmp/precomputed/attribute_codebooks
 LOGROOT=/root/autodl-tmp/logs/attribute_relation_pr3
 OUTROOT=/root/autodl-tmp/experiments/attribute_relation_pr3_smoke
