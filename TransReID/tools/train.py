@@ -1,6 +1,7 @@
 """Unified training entry point for CLIP, DINOv3, and SigLIP2 backbones."""
 
 import argparse
+import atexit
 import os
 import random
 import sys
@@ -77,6 +78,11 @@ def main():
             raise RuntimeError("NCCL distributed training requires CUDA")
         torch.cuda.set_device(local_rank)
         dist.init_process_group(backend="nccl", init_method="env://")
+        atexit.register(
+            lambda: dist.destroy_process_group()
+            if dist.is_initialized()
+            else None
+        )
         world_size = dist.get_world_size()
         if cfg.SOLVER.IMS_PER_BATCH % world_size:
             raise ValueError(

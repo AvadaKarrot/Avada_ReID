@@ -127,8 +127,10 @@ class RandomIdentitySampler_DDP(Sampler):
         self.num_pids_per_batch = self.mini_batch_size // self.num_instances
         self.index_dic = defaultdict(list)
 
-        for index, (_, pid, _, _) in enumerate(self.data_source):
-            self.index_dic[pid].append(index)
+        for index, items in enumerate(self.data_source):
+            # Caption/Attribute-enabled records append fields after the
+            # historical (path, pid, camid, dataset_id) contract.
+            self.index_dic[items[1]].append(index)
         self.pids = list(self.index_dic.keys())
 
         # estimate number of examples in an epoch
