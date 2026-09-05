@@ -90,7 +90,7 @@ class Trainer:
                 device_ids=[self.local_rank],
                 output_device=self.local_rank,
                 broadcast_buffers=False,
-                find_unused_parameters=True,
+                find_unused_parameters=False,
             )
         self.checkpointer = TrainingCheckpointer(
             self.output_dir,

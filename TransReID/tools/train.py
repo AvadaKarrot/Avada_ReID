@@ -64,6 +64,32 @@ def parse_args():
     return parser.parse_args()
 
 
+def log_peak_cuda_memory(logger, device, *, distributed, is_main_process):
+    if torch.device(device).type != "cuda":
+        return
+    values = torch.tensor(
+        [
+            torch.cuda.max_memory_allocated(device),
+            torch.cuda.max_memory_reserved(device),
+        ],
+        dtype=torch.float64,
+        device=device,
+    )
+    gathered = [values]
+    if distributed:
+        gathered = [torch.zeros_like(values) for _ in range(dist.get_world_size())]
+        dist.all_gather(gathered, values)
+    if is_main_process:
+        for rank, rank_values in enumerate(gathered):
+            allocated, reserved = rank_values.cpu().tolist()
+            logger.info(
+                "cuda_peak rank=%d allocated_gib=%.3f reserved_gib=%.3f",
+                rank,
+                allocated / (1024 ** 3),
+                reserved / (1024 ** 3),
+            )
+
+
 def main():
     args = parse_args()
     cfg.merge_from_file(args.config_file)
@@ -190,6 +216,13 @@ def main():
             max_iterations_per_epoch=smoke_iterations,
             save_checkpoints=not bool(smoke_iterations),
         )
+        if smoke_iterations:
+            log_peak_cuda_memory(
+                logger,
+                device,
+                distributed=distributed,
+                is_main_process=is_main_process,
+            )
     finally:
         if distributed and dist.is_initialized():
             dist.destroy_process_group()
