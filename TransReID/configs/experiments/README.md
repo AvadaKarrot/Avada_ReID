@@ -11,6 +11,8 @@ or objective values in the retained configurations.
   evaluation.
 - `matrices/protocol2/`: JSON run matrices for the standard three-source
   Protocol-2 evaluation.
+- `gates/`: small, explicitly ordered decision gates. These are not full
+  protocol matrices and must be run one named stage at a time.
 
 The source, target, caption path, and output path inside a base YAML are defaults
 for direct smoke or manual runs. Matrix runners override those fields for each
@@ -58,6 +60,11 @@ For historical two-card/global-batch-256 reproduction, use the DDP options on
 the matrix runners and follow
 `docs/naflex_two_gpu_ddp_bs256_runbook.md`. The canonical base recipes retain
 batch 64 so older experiment records are not silently redefined.
+
+The isolated 60-epoch M→MS decision gate is documented in
+`docs/naflex_legacy_bs256_gate_runbook.md`. Its training runner requires an
+explicit `--only` stage and therefore never launches all four methods by
+accident.
 
 Before starting a formal run, confirm the matrix's source domains, target domain,
 `DATASETS.COMBINEALL=false`, target caption disabled, seed, schedule, and output

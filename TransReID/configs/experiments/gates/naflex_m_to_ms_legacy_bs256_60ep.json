@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "protocol": "m-to-ms-legacy-batch-gate",
+  "description": "Two-GPU NaFlex M-to-MS gate aligned to the legacy 60-epoch/global-batch-256 schedule.",
+  "source": "market1501",
+  "target": "msmt17",
+  "combineall": false,
+  "seed": 1234,
+  "world_size": 2,
+  "global_batch_size": 256,
+  "solver_overrides": {
+    "OPTIMIZER_NAME": "Adam",
+    "MAX_EPOCHS": 60,
+    "BASE_LR": 0.000005,
+    "WARMUP_METHOD": "linear",
+    "WARMUP_ITERS": 10,
+    "WARMUP_FACTOR": 0.1,
+    "WEIGHT_DECAY": 0.0001,
+    "WEIGHT_DECAY_BIAS": 0.0001,
+    "LARGE_FC_LR": false,
+    "BIAS_LR_FACTOR": 2,
+    "STEPS": [30, 50],
+    "GAMMA": 0.1,
+    "CHECKPOINT_PERIOD": 2,
+    "EVAL_PERIOD": 2,
+    "LOG_PERIOD": 20,
+    "SEED": 1234,
+    "AMP_ENABLED": true,
+    "AMP_INIT_SCALE": 512.0
+  },
+  "runs": [
+    {
+      "name": "image_only",
+      "method": "image_only",
+      "base_config": "configs/experiments/base/siglip2_naflex_image_only.yml",
+      "output_relative": "experiments/legacy_bs256_gate/m_to_ms/image_only/seed_1234",
+      "objective_overrides": {}
+    },
+    {
+      "name": "caption_pid",
+      "method": "caption_pid",
+      "base_config": "configs/experiments/base/siglip2_naflex_caption_pid.yml",
+      "output_relative": "experiments/legacy_bs256_gate/m_to_ms/caption_pid/seed_1234",
+      "objective_overrides": {}
+    },
+    {
+      "name": "caption_codebook_delayed",
+      "method": "caption_codebook",
+      "base_config": "configs/experiments/base/siglip2_naflex_caption_codebook.yml",
+      "output_relative": "experiments/legacy_bs256_gate/m_to_ms/caption_codebook_delayed/seed_1234",
+      "objective_overrides": {
+        "ATTRIBUTE_CODEBOOK.START_EPOCH": 6,
+        "ATTRIBUTE_CODEBOOK.WEIGHT": 0.05
+      }
+    },
+    {
+      "name": "caption_codebook_relation",
+      "method": "caption_codebook_relation",
+      "base_config": "configs/experiments/base/siglip2_naflex_caption_codebook_relation.yml",
+      "output_relative": "experiments/legacy_bs256_gate/m_to_ms/caption_codebook_relation/seed_1234",
+      "objective_overrides": {
+        "ATTRIBUTE_CODEBOOK.START_EPOCH": 6,
+        "ATTRIBUTE_CODEBOOK.WEIGHT": 0.05,
+        "ATTRIBUTE_RELATION.START_EPOCH": 6,
+        "ATTRIBUTE_RELATION.WEIGHT": 0.01,
+        "ATTRIBUTE_RELATION.DOMAIN_KEY": "camera",
+        "ATTRIBUTE_RELATION.QUEUE_SIZE": 256
+      }
+    }
+  ]
+}
