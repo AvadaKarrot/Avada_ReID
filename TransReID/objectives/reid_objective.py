@@ -13,6 +13,7 @@ class ReIDObjective(nn.Module):
     def __init__(
         self,
         triplet_margin: float = 0.3,
+        triplet_gather_across_ranks: bool = False,
         id_weight: float = 1.0,
         triplet_weight: float = 1.0,
         label_smoothing: float = 0.0,
@@ -28,7 +29,10 @@ class ReIDObjective(nn.Module):
         attribute_relation_start_epoch: int = 6,
     ):
         super().__init__()
-        self.triplet = BatchHardTripletLoss(margin=triplet_margin)
+        self.triplet = BatchHardTripletLoss(
+            margin=triplet_margin,
+            gather_across_ranks=triplet_gather_across_ranks,
+        )
         self.id_weight = id_weight
         self.triplet_weight = triplet_weight
         self.label_smoothing = label_smoothing
@@ -157,6 +161,8 @@ class ReIDObjective(nn.Module):
             "id": sum(id_losses),
             "triplet": sum(triplet_losses),
         }
+        for name, value in getattr(self.triplet, "last_metrics", {}).items():
+            losses[name] = value
 
         total = (
             self.id_weight * losses["id"]
@@ -175,6 +181,10 @@ class ReIDObjective(nn.Module):
                 valid_mask=batch.get("caption_mask"),
                 pids=pids,
             )
+            for name, value in getattr(
+                self.caption_objective, "last_metrics", {}
+            ).items():
+                losses[name] = value
             total = total + self.caption_weight * losses["caption"]
 
         codebook_weight = self.current_attribute_codebook_weight()

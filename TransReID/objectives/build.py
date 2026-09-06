@@ -26,6 +26,11 @@ def build_objective(
 ) -> ReIDObjective:
     return ReIDObjective(
         triplet_margin=float(_getattr_path(cfg, "SOLVER.MARGIN", 0.3)),
+        triplet_gather_across_ranks=bool(
+            _getattr_path(
+                cfg, "OBJECTIVE.TRIPLET.GATHER_ACROSS_RANKS", False
+            )
+        ),
         id_weight=float(_getattr_path(cfg, "MODEL.ID_LOSS_WEIGHT", 1.0)),
         triplet_weight=float(
             _getattr_path(cfg, "MODEL.TRIPLET_LOSS_WEIGHT", 1.0)
@@ -218,6 +223,11 @@ def build_caption_objective(cfg, image_dim: int):
         use_projection=bool(
             _getattr_path(
                 cfg, "OBJECTIVE.CAPTION.USE_PROJECTION", True
+            )
+        ),
+        gather_across_ranks=bool(
+            _getattr_path(
+                cfg, "OBJECTIVE.CAPTION.GATHER_ACROSS_RANKS", False
             )
         ),
     )

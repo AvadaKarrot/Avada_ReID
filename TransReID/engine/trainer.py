@@ -18,9 +18,9 @@ from .checkpoint import (
 class _DistributedTrainingGraph(nn.Module):
     """Keep model and objective in one DDP forward graph.
 
-    The rank-local batch is deliberately not gathered: this preserves the
-    legacy two-GPU semantics for ID, Triplet, Caption, Codebook, and Relation
-    losses while DDP averages parameter gradients across ranks.
+    Objectives remain rank-local by default. Individual metric objectives may
+    opt into local-anchor/global-candidate gathering while ID and per-instance
+    Codebook losses keep ordinary DDP gradient averaging semantics.
     """
 
     def __init__(self, model, objective):
