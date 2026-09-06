@@ -103,7 +103,12 @@ def main():
         if not torch.cuda.is_available():
             raise RuntimeError("NCCL distributed training requires CUDA")
         torch.cuda.set_device(local_rank)
-        dist.init_process_group(backend="nccl", init_method="env://")
+        device = torch.device("cuda", local_rank)
+        dist.init_process_group(
+            backend="nccl",
+            init_method="env://",
+            device_id=device,
+        )
         atexit.register(
             lambda: dist.destroy_process_group()
             if dist.is_initialized()
@@ -120,7 +125,7 @@ def main():
                 "Per-rank batch size must be divisible by "
                 "DATALOADER.NUM_INSTANCE"
             )
-        device = f"cuda:{local_rank}"
+        device = str(device)
     else:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.MODEL.DEVICE_ID)
         world_size = 1
