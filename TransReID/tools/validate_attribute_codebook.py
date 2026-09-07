@@ -32,6 +32,13 @@ def parse_args():
         "--verify-caption-file", action="store_true",
         help="Re-hash the original Caption JSONL named by the manifest",
     )
+    parser.add_argument(
+        "--caption-file", default="",
+        help=(
+            "Override the Caption JSONL path recorded by the manifest. "
+            "Use this when validated artifacts were moved to another host."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -40,6 +47,7 @@ def validate_directory(
     *,
     forbidden_datasets=(),
     verify_caption_file=False,
+    caption_file="",
 ):
     artifact_dir = Path(artifact_dir)
     manifest_path = artifact_dir / "manifest.json"
@@ -80,7 +88,7 @@ def validate_directory(
         errors.extend(validation["errors"])
 
     if verify_caption_file:
-        caption_path = Path(manifest.get("caption_file", ""))
+        caption_path = Path(caption_file or manifest.get("caption_file", ""))
         if not caption_path.is_file():
             errors.append(f"Caption file is unavailable: {caption_path}")
         elif sha256_file(caption_path) != manifest.get("caption_sha256"):
@@ -101,6 +109,7 @@ def main():
         args.artifact_dir,
         forbidden_datasets=args.forbid_dataset,
         verify_caption_file=args.verify_caption_file,
+        caption_file=args.caption_file,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     if not result["valid"]:

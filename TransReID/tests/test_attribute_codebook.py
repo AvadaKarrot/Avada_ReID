@@ -267,12 +267,26 @@ class SemanticCodebookTest(unittest.TestCase):
                 forbidden_datasets=("msmt17",),
                 verify_caption_file=True,
             )
+            relocated_caption = directory / "relocated" / "captions.jsonl"
+            relocated_caption.parent.mkdir()
+            relocated_caption.write_bytes(caption_path.read_bytes())
+            manifest["caption_file"] = str(directory / "old-host" / "captions.jsonl")
+            (directory / "manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+            relocated = validate_directory(
+                directory,
+                forbidden_datasets=("msmt17",),
+                verify_caption_file=True,
+                caption_file=relocated_caption,
+            )
             invalid = validate_directory(
                 directory,
                 forbidden_datasets=("market1501",),
             )
 
         self.assertTrue(valid["valid"], valid["errors"])
+        self.assertTrue(relocated["valid"], relocated["errors"])
         self.assertFalse(invalid["valid"])
         self.assertIn("forbidden target datasets", invalid["errors"][0])
 
