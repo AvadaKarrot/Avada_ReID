@@ -4,7 +4,7 @@
 Runtime: /home/zhangwq/ReID_2026_runtime/autodl-tmp
 Worktree: /home/zhangwq/ReID_2026_runtime/worktrees/ddp-global-loss-gather
 Environment: /home/zhangwq/miniconda3/envs/ReIDEnv
-Branch: codex/ddp-global-loss-gather
+Branch: codex/naflex-reid (consolidated 2026-09-10; physical worktree path unchanged)
 
 The Campus log inventory contains the following historical experiment families.
 Log presence alone is not proof of successful completion; inspect final epoch and checkpoint before reporting a result.
