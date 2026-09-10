@@ -205,7 +205,25 @@ def build_caption_objective(cfg, image_dim: int):
             model_name=model_name,
             trainable=trainable,
         )
-    return CaptionAlignmentObjective(
+    loss_type = str(_getattr_path(cfg, "OBJECTIVE.CAPTION.LOSS_TYPE", "nce")).lower()
+    options = {}
+    if loss_type == "nce":
+        objective_class = CaptionAlignmentObjective
+    elif loss_type == "sigmoid":
+        from .losses.caption_sigmoid import CaptionSigmoidObjective
+        objective_class = CaptionSigmoidObjective
+        options = dict(
+            sigmoid_reduction=_getattr_path(
+                cfg, "OBJECTIVE.CAPTION.SIGMOID_REDUCTION", "anchor"),
+            sigmoid_bias=float(_getattr_path(
+                cfg, "OBJECTIVE.CAPTION.SIGMOID_BIAS", -10.0)),
+            sigmoid_learnable=bool(_getattr_path(
+                cfg, "OBJECTIVE.CAPTION.SIGMOID_LEARNABLE", True)),
+        )
+    else:
+        raise ValueError("OBJECTIVE.CAPTION.LOSS_TYPE must be nce or sigmoid")
+    return objective_class(
+        **options,
         image_dim=image_dim,
         text_dim=text_encoder.output_dim,
         text_encoder=text_encoder,

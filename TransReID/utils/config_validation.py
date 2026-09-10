@@ -69,6 +69,13 @@ def validate_training_config(current_cfg):
                 "OBJECTIVE.CAPTION.FEATURE_LEVEL must be 'global'; "
                 "token-level alignment is a separate experiment"
             )
+        caption_node = current_cfg.OBJECTIVE.CAPTION
+        if str(getattr(caption_node, "LOSS_TYPE", "nce")).lower() not in {"nce", "sigmoid"}:
+            raise ValueError("OBJECTIVE.CAPTION.LOSS_TYPE must be nce or sigmoid")
+        if getattr(caption_node, "SIGMOID_REDUCTION", "anchor") not in {
+            "anchor", "pair_mean", "balanced"
+        }:
+            raise ValueError("Invalid OBJECTIVE.CAPTION.SIGMOID_REDUCTION")
         positive_mode = str(
             getattr(
                 current_cfg.OBJECTIVE.CAPTION,

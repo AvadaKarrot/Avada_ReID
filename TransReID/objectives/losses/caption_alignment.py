@@ -123,6 +123,12 @@ class CaptionAlignmentObjective(nn.Module):
             raise ValueError("reduction must be 'mean' or 'none'")
         return values.mean()
 
+    def _compute_logits(self, images, texts):
+        return images @ texts.t() / self.temperature
+
+    def _alignment_loss(self, logits, positive_mask, reduction="mean"):
+        return self._multi_positive_nce(logits, positive_mask, reduction)
+
     def forward(
         self,
         image_features: torch.Tensor,
@@ -190,7 +196,7 @@ class CaptionAlignmentObjective(nn.Module):
             self.text_projection(text_features), dim=-1
         )
         if not use_global_candidates:
-            logits = image_embeddings @ text_embeddings.t() / self.temperature
+            logits = self._compute_logits(image_embeddings, text_embeddings)
             self.last_metrics = {
                 "caption_local_anchors": image_embeddings.new_tensor(
                     float(image_embeddings.shape[0])
@@ -205,8 +211,8 @@ class CaptionAlignmentObjective(nn.Module):
                 self.positive_mode,
             )
             return 0.5 * (
-                self._multi_positive_nce(logits, positive_mask)
-                + self._multi_positive_nce(logits.t(), positive_mask.t())
+                self._alignment_loss(logits, positive_mask)
+                + self._alignment_loss(logits.t(), positive_mask.t())
             )
 
         global_images, layout = gather_variable_with_grad(image_embeddings)
@@ -226,10 +232,8 @@ class CaptionAlignmentObjective(nn.Module):
         if layout.global_size == 0:
             return image_features.sum() * 0.0
 
-        image_logits = (
-            image_embeddings @ global_texts.t() / self.temperature
-        )
-        text_logits = text_embeddings @ global_images.t() / self.temperature
+        image_logits = self._compute_logits(image_embeddings, global_texts)
+        text_logits = self._compute_logits(text_embeddings, global_images)
         if self.positive_mode == "pid":
             positive_mask = selected_pids[:, None].eq(global_pids[None, :])
         else:
@@ -246,10 +250,10 @@ class CaptionAlignmentObjective(nn.Module):
                 local_indices, layout.local_offset + local_indices
             ] = True
 
-        image_values = self._multi_positive_nce(
+        image_values = self._alignment_loss(
             image_logits, positive_mask, reduction="none"
         )
-        text_values = self._multi_positive_nce(
+        text_values = self._alignment_loss(
             text_logits, positive_mask, reduction="none"
         )
         return 0.5 * (
